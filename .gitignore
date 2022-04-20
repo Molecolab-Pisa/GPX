@@ -1,0 +1,7 @@
+dev/
+__pycache__/
+.ipynb_checkpoints/
+*.swp
+*.pyc
+*.egg-info
+*.so
