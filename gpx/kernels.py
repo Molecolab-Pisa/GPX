@@ -1,14 +1,24 @@
+import functools
 import jax.numpy as jnp
 from jax import vmap
 
 
 # =============================================================================
-# Kernel Mappings
+# Kernel Decorator
 # =============================================================================
 
 
-def kmap(kernel, x1, x2, params):
-    return vmap(lambda x: vmap(lambda y: kernel(x, y, params))(x2))(x1)
+def kernelize(kernel_func):
+    """Decorator to promote a kernel function operating on single samples to a
+       function operating on batches.
+    """
+
+    @functools.wraps(kernel_func)
+    def kernel(x1, x2, params):
+        return vmap(lambda x: vmap(lambda y: kernel_func(x, y, params))(x2))(x1)
+
+    return kernel
+
 
 
 # =============================================================================
@@ -16,32 +26,40 @@ def kmap(kernel, x1, x2, params):
 # =============================================================================
 
 
-def squared_exponential_kernel(x1, x2, params):
+def squared_exponential_kernel_base(x1, x2, params):
     z1 = x1 / params["lengthscale"]
     z2 = x2 / params["lengthscale"]
     d2 = jnp.sum((z1 - z2) ** 2)
     return jnp.exp(-d2)
 
+squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
 
-def matern12_kernel(x1, x2, params):
+
+def matern12_kernel_base(x1, x2, params):
     z1 = x1 / params["lengthscale"]
     z2 = x2 / params["lengthscale"]
     d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return jnp.exp(-d)
 
+matern12_kernel = kernelize(matern12_kernel_base)
 
-def matern32_kernel(x1, x2, params):
+
+def matern32_kernel_base(x1, x2, params):
     z1 = x1 / params["lengthscale"]
     z2 = x2 / params["lengthscale"]
     d = jnp.sqrt(3.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d) * jnp.exp(-d)
 
+matern32_kernel = kernelize(matern32_kernel_base)
 
-def matern52_kernel(x1, x2, params):
+
+def matern52_kernel_base(x1, x2, params):
     z1 = x1 / params["lengthscale"]
     z2 = x2 / params["lengthscale"]
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d + d**2 / 3.0) * jnp.exp(-d)
+
+matern52_kernel = kernelize(matern52_kernel_base)
 
 
 # =============================================================================
