@@ -6,7 +6,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
 
-from .kernels import kmap
 from .utils import softplus, split_params
 
 
@@ -44,7 +43,7 @@ def _gpr_log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     y = y - y_mean
     m = y.shape[0]
 
-    C_mm = kmap(kernel, x, x, kernel_params) + sigma**2 * jnp.eye(m)
+    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(m)
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
     mll = (
@@ -87,7 +86,7 @@ def _gpr_fit(params, x, y, kernel):
     y_mean = jnp.mean(y)
     y = y - y_mean
 
-    C_mm = kmap(kernel, x, x, kernel_params) + sigma**2 * jnp.eye(x.shape[0])
+    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(x.shape[0])
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
 
     return c, y_mean
@@ -134,16 +133,16 @@ def _gpr_predict(
     kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
     sigma = softplus(sigma)
 
-    K_mn = kmap(kernel, x_train, x, kernel_params)
+    K_mn = kernel(x_train, x, kernel_params)
     mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
 
     if full_covariance:
-        C_mm = kmap(kernel, x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
+        C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
             x_train.shape[0]
         )
         L_m = jsp.linalg.cholesky(C_mm, lower=True)
         G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        C_nn = kmap(kernel, x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
+        C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
         return mu, C_nn
 
     return mu
