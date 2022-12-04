@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
 
-from .utils import softplus, split_params
+from ..utils import softplus, split_params
 
 
 # =============================================================================
