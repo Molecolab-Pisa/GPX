@@ -37,24 +37,25 @@ def kernelize(kernel_func):
     return kernel
 
 
-
 # =============================================================================
 # Kernel Functions
 # =============================================================================
 
+
 def squared_exponential_kernel(x1, x2, params):
-    z1 = x1 / params['lengthscale']
-    z2 = x2 / params['lengthscale']
+    z1 = x1 / params["lengthscale"]
+    z2 = x2 / params["lengthscale"]
     d2 = squared_distances(z1, z2)
     return jnp.exp(-d2)
 
-#def squared_exponential_kernel_base(x1, x2, params):
+
+# def squared_exponential_kernel_base(x1, x2, params):
 #    z1 = x1 / params["lengthscale"]
 #    z2 = x2 / params["lengthscale"]
 #    d2 = jnp.sum((z1 - z2) ** 2)
 #    return jnp.exp(-d2)
 #
-#squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
+# squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
 
 
 def matern12_kernel_base(x1, x2, params):
@@ -62,6 +63,7 @@ def matern12_kernel_base(x1, x2, params):
     z2 = x2 / params["lengthscale"]
     d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return jnp.exp(-d)
+
 
 matern12_kernel = kernelize(matern12_kernel_base)
 
@@ -72,6 +74,7 @@ def matern32_kernel_base(x1, x2, params):
     d = jnp.sqrt(3.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d) * jnp.exp(-d)
 
+
 matern32_kernel = kernelize(matern32_kernel_base)
 
 
@@ -80,6 +83,7 @@ def matern52_kernel_base(x1, x2, params):
     z2 = x2 / params["lengthscale"]
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d + d**2 / 3.0) * jnp.exp(-d)
+
 
 matern52_kernel = kernelize(matern52_kernel_base)
 
@@ -100,14 +104,14 @@ m52_kernel = matern52_kernel
 # =============================================================================
 
 __all__ = [
-    'kernelize',
-    'squared_exponential_kernel',
-    'se_kernel',
-    'rbf_kernel',
-    'matern12_kernel',
-    'm12_kernel',
-    'matern32_kernel',
-    'm32_kernel',
-    'matern52_kernel',
-    'm52_kernel',
+    "kernelize",
+    "squared_exponential_kernel",
+    "se_kernel",
+    "rbf_kernel",
+    "matern12_kernel",
+    "m12_kernel",
+    "matern32_kernel",
+    "m32_kernel",
+    "matern52_kernel",
+    "m52_kernel",
 ]

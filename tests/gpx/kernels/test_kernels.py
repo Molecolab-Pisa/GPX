@@ -1,4 +1,3 @@
-
 import pytest
 import numpy as np
 from numpy.testing import assert_allclose
@@ -27,7 +26,7 @@ def reference_squared_exponential_kernel(x1, x2, params):
         for j in range(n2):
             dist = x1[i] - x2[j]
             dist2 = jnp.dot(dist.T, dist)
-            K[i, j] = jnp.exp(-dist2 / params['lengthscale']**2)
+            K[i, j] = jnp.exp(-dist2 / params["lengthscale"] ** 2)
     return K
 
 
@@ -40,7 +39,7 @@ def test_squared_exponential_kernel(lengthscale):
     X1 = random.normal(key, shape=(10, 10))
     subkey, key = random.split(key)
     X2 = random.normal(subkey, shape=(20, 10))
-    params = {'lengthscale': lengthscale}
+    params = {"lengthscale": lengthscale}
 
     K = squared_exponential_kernel(X1, X2, params)
     K_ref = reference_squared_exponential_kernel(X1, X2, params)

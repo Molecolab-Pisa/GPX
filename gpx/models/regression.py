@@ -9,7 +9,6 @@ from jax import grad, jit
 from ..utils import softplus, split_params
 
 
-
 # def gpr_optimize(params, x, y, kernel, n_steps=100, step_size=0.01, verbose=20):
 #    '''
 #    Optimize a Gaussian Process Regression model with the Adam optimizer.
