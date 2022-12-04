@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+from jax import jit
 
 
 # =============================================================================
@@ -6,6 +7,7 @@ import jax.numpy as jnp
 # =============================================================================
 
 
+@jit
 def squared_distances(x1, x2):
     jitter = 1e-12
     x1s = jnp.sum(jnp.square(x1), axis=-1)
@@ -19,8 +21,14 @@ def squared_distances(x1, x2):
 # =============================================================================
 
 
+@jit
 def softplus(x):
     return jnp.logaddexp(x, 0.0)
+
+
+@jit
+def inverse_softplus(x):
+    return jnp.log(jnp.expm1(x))
 
 
 # =============================================================================
