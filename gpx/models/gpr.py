@@ -1,10 +1,7 @@
-from functools import partial
-from collections import defaultdict, namedtuple
-
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import grad, jit
+from jax import grad
 from jax.tree_util import tree_map, tree_flatten, tree_unflatten
 
 from scipy.optimize import minimize
