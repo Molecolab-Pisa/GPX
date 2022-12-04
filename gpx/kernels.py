@@ -2,6 +2,8 @@ import functools
 import jax.numpy as jnp
 from jax import vmap
 
+from .utils import squared_distances
+
 
 # =============================================================================
 # Kernel Decorator
@@ -40,14 +42,19 @@ def kernelize(kernel_func):
 # Kernel Functions
 # =============================================================================
 
-
-def squared_exponential_kernel_base(x1, x2, params):
-    z1 = x1 / params["lengthscale"]
-    z2 = x2 / params["lengthscale"]
-    d2 = jnp.sum((z1 - z2) ** 2)
+def squared_exponential_kernel(x1, x2, params):
+    z1 = x1 / params['lengthscale']
+    z2 = x2 / params['lengthscale']
+    d2 = squared_distances(z1, z2)
     return jnp.exp(-d2)
 
-squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
+#def squared_exponential_kernel_base(x1, x2, params):
+#    z1 = x1 / params["lengthscale"]
+#    z2 = x2 / params["lengthscale"]
+#    d2 = jnp.sum((z1 - z2) ** 2)
+#    return jnp.exp(-d2)
+#
+#squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
 
 
 def matern12_kernel_base(x1, x2, params):
