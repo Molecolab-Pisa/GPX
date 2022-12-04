@@ -6,7 +6,7 @@ from jax.tree_util import tree_map, tree_flatten, tree_unflatten
 
 from scipy.optimize import minimize
 
-from ..utils import constrain_parameters, uncostrain_parameters, split_params
+from ..utils import constrain_parameters, uncostrain_parameters, split_params, print_model
 
 
 # =============================================================================
@@ -156,6 +156,9 @@ class GaussianProcessRegression:
 
         self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
         self.params_uncostrained = uncostrain_parameters(self.params)
+
+    def print(self, **kwargs):
+        return print_model(self, **kwargs)
 
     def log_marginal_likelihood(self, x, y, return_negative=False):
         return log_marginal_likelihood(

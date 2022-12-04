@@ -1,6 +1,8 @@
+from tabulate import tabulate
 import jax.numpy as jnp
 from jax import jit
 from jax.tree_util import tree_map
+
 
 
 # =============================================================================
@@ -49,3 +51,21 @@ def constrain_parameters(params, transform=softplus):
 
 def uncostrain_parameters(params, transform=inverse_softplus):
     return tree_map(lambda p: transform(p), params)
+
+
+# =============================================================================
+# Printing
+# =============================================================================
+
+
+def print_model(model, tablefmt='simple_outline'):
+    kernel_params = model.params['kernel_params']
+    sigma = model.params['sigma']
+
+    headers = ['name', 'type', 'dtype', 'shape', 'value']
+    get_info = lambda v: (type(v), v.dtype, v.shape, v)
+
+    fields = [['kernel '+k]+list(get_info(v)) for k, v in kernel_params.items()]
+    fields += [['sigma']+list(get_info(sigma))]
+
+    print(tabulate(fields, headers=headers, tablefmt=tablefmt))
