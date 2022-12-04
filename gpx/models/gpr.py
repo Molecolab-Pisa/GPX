@@ -183,6 +183,8 @@ class GaussianProcessRegression:
         self.params_uncostrained = tree_unflatten(treedef, optres.x)
         self.params = constrain_parameters(self.params_uncostrained)
 
+        self.optimize_results_ = optres
+
         self.c_, self.y_mean_ = fit(self.params, x, y, self.kernel)
         self.x_train = x
         self.y_train = y
