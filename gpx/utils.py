@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 from jax import jit
+from jax.tree_util import tree_map
 
 
 # =============================================================================
@@ -40,3 +41,11 @@ def split_params(params):
     kernel_params = params["kernel_params"]
     sigma = params["sigma"]
     return kernel_params, sigma
+
+
+def constrain_parameters(params, transform=softplus):
+    return tree_map(lambda p: transform(p), params)
+
+
+def uncostrain_parameters(params, transform=inverse_softplus):
+    return tree_map(lambda p: transform(p), params)

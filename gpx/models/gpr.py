@@ -5,16 +5,19 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
+from jax.tree_util import tree_map, tree_flatten, tree_unflatten
 
-from ..utils import softplus, split_params
+from scipy.optimize import minimize
+
+from ..utils import constrain_parameters, uncostrain_parameters, split_params
 
 
 # =============================================================================
-# Standard Gaussian Process Regression
+# Standard Gaussian Process Regression: functions
 # =============================================================================
 
 
-def _gpr_log_marginal_likelihood(params, x, y, kernel, return_negative=False):
+def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     """
     Computes the log marginal likelihood for standard Gaussian Process Regression.
     Arguments
@@ -36,8 +39,6 @@ def _gpr_log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     """
 
     kernel_params, sigma = split_params(params)
-    kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
-    sigma = softplus(sigma)
 
     y_mean = jnp.mean(y)
     y = y - y_mean
@@ -56,7 +57,7 @@ def _gpr_log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     return mll
 
 
-def _gpr_fit(params, x, y, kernel):
+def fit(params, x, y, kernel):
     """
     Fits a Gaussian Process Regression model.
     Arguments
@@ -80,8 +81,6 @@ def _gpr_fit(params, x, y, kernel):
     """
 
     kernel_params, sigma = split_params(params)
-    kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
-    sigma = softplus(sigma)
 
     y_mean = jnp.mean(y)
     y = y - y_mean
@@ -92,7 +91,7 @@ def _gpr_fit(params, x, y, kernel):
     return c, y_mean
 
 
-def _gpr_predict(
+def predict(
     params,
     x_train,
     x,
@@ -130,8 +129,6 @@ def _gpr_predict(
     """
 
     kernel_params, sigma = split_params(params)
-    kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
-    sigma = softplus(sigma)
 
     K_mn = kernel(x_train, x, kernel_params)
     mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
@@ -148,26 +145,68 @@ def _gpr_predict(
     return mu
 
 
-# Public interface collecting related methods
-GaussianProcessRegression = namedtuple(
-    "GaussianProcessRegression",
-    [
-        "lml",
-        "fit",
-        "predict",
-    ],
-)(
-    _gpr_log_marginal_likelihood,
-    _gpr_fit,
-    _gpr_predict,
-)
+# =============================================================================
+# Standard Gaussian Process Regression: interface
+# =============================================================================
 
-# Aliases
+
+class GaussianProcessRegression:
+    def __init__(self, kernel, kernel_params, sigma):
+
+        self.kernel = kernel
+        self.kernel_params = tree_map(lambda p: jnp.array(p), kernel_params)
+        self.sigma = jnp.array(sigma)
+
+        self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
+        self.params_uncostrained = uncostrain_parameters(self.params)
+
+    def log_marginal_likelihood(self, x, y, return_negative=False):
+        return log_marginal_likelihood(
+            self.params, x, y, kernel=self.kernel, return_negative=return_negative
+        )
+
+    def fit(self, x, y):
+
+        x0, treedef = tree_flatten(self.params_uncostrained)
+
+        def loss(xt):
+            params = tree_unflatten(treedef, xt)
+            params = constrain_parameters(params)
+            return log_marginal_likelihood(
+                params, x=x, y=y, kernel=self.kernel, return_negative=True
+            )
+
+        grad_loss = grad(loss)
+
+        optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
+
+        self.params_uncostrained = tree_unflatten(treedef, optres.x)
+        self.params = constrain_parameters(self.params_uncostrained)
+
+        self.c_, self.y_mean_ = fit(self.params, x, y, self.kernel)
+        self.x_train = x
+        self.y_train = y
+
+        return self
+
+    def predict(self, x, full_covariance=False):
+        return predict(
+            self.params,
+            self.x_train,
+            x,
+            self.c_,
+            self.y_mean_,
+            self.kernel,
+            full_covariance=full_covariance,
+        )
+
+
+# Alias
 GPR = GaussianProcessRegression
 
 
 # Export
 __all__ = [
-    'GaussianProcessRegression',
-    'GPR',
+    "GaussianProcessRegression",
+    "GPR",
 ]
