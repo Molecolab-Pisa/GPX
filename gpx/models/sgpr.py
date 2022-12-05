@@ -71,7 +71,7 @@ def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False)
    return mll
 
 
-def sgpr_fit(params, x, y, x_locs, kernel):
+def fit(params, x, y, x_locs, kernel):
    '''
    Fits a Sparse Gaussian Process Regression model (Projected Processes).
    Arguments
@@ -99,15 +99,13 @@ def sgpr_fit(params, x, y, x_locs, kernel):
    '''
 
    kernel_params, sigma = split_params(params)
-   kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
-   sigma = softplus(sigma)
    x_locs = params["x_locs"] if "x_locs" in params.keys() else x_locs
 
    y_mean = jnp.mean(y)
    y = y - y_mean
 
-   K_mn = kmap(kernel, x_locs, x, kernel_params)
-   C_mm = sigma**2 * kmap(kernel, x_locs, x_locs, kernel_params) + jnp.dot(
+   K_mn = kernel(x_locs, x, kernel_params)
+   C_mm = sigma**2 * kernel(x_locs, x_locs, kernel_params) + jnp.dot(
        K_mn, K_mn.T
    )
    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
