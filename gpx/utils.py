@@ -45,12 +45,23 @@ def split_params(params):
     return kernel_params, sigma
 
 
-def constrain_parameters(params, transform=softplus):
-    return tree_map(lambda p: transform(p), params)
+def transform_parameters(params, transform, ignore=None):
+    if ignore is not None:
+        tmp = {key: params.pop(key) for key in ignore}
+        transformed = tree_map(lambda p: transform(p), params)
+        for key in tmp:
+            constrained[key] = tmp.pop(key)
+    else:
+        transformed = tree_map(lambda p: transform(p), params)
+    return transformed
 
 
-def uncostrain_parameters(params, transform=inverse_softplus):
-    return tree_map(lambda p: transform(p), params)
+def constrain_parameters(params, transform=softplus, ignore=None):
+    return transform_parameters(params, transform=transform, ignore=ignore)
+
+
+def uncostrain_parameters(params, transform=inverse_softplus, ignore=None):
+    return transform_parameters(params, transform=transform, ignore=ignore)
 
 
 # =============================================================================

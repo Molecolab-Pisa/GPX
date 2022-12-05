@@ -1,12 +1,12 @@
-from functools import partial
-from collections import defaultdict, namedtuple
-
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import grad, jit
+from jax import grad
+from jax.tree_util import tree_map, tree_flatten, tree_unflatten
 
-from ..utils import softplus, split_params
+from scipy.optimize import minimize
+
+from ..utils import constrain_parameters, uncostrain_parameters, split_params, print_model
 
 
 # =============================================================================
@@ -172,64 +172,88 @@ def predict(
    return mu
 
 
-def sgpr_optimize(
-   params,
-   x,
-   y,
-   x_locs,
-   kernel,
-   n_steps=100,
-   step_size=0.01,
-   verbose=20,
-):
-   '''
-   Optimize a Sparse Gaussian Process Regression model (Projected Processes).
-   Arguments
-   ---------
-   params          : dict
-                   Dictionary of parameters. Should have a 'kernel_params' keyword
-                   to specify kernel parameters (a dictionary) and a 'sigma' keyword
-                   to specify the noise. If the input locations should be optimized, they
-                   must be included in `params` dictionary under the keyword 'x_locs'.
-                   In this case, `x_locs` is ignored.
-   x               : jnp.ndarray, (M, F)
-                   Input matrix of M samples and F features
-   y               : jnp.ndarray, (N, 1)
-                   Target matrix with M samples and 1 target
-   x_locs          : jnp.ndarray, (N, F)
-                   Input locations (N <= M) with F features
-   kernel          : callable
-                   Kernel function
-   n_steps         : int
-                   Number of optimization steps
-   step_size       : float
-                   Step size / learning rate
-   verbose         : int
-                   Frequency for printing the loss (negative log marginal likelihood)
-   Returns
-   -------
-   params          : dict
-                   Optimized parameters
-   '''
 
-   opt_init, opt_update, get_params = jax_optim.adam(step_size=step_size)
-   opt_state = opt_init(params)
-   loss_fn = partial(sgpr_log_marginal_likelihood, kernel=kernel, return_negative=True)
+# =============================================================================
+# Sparse Gaussian Process Regression: interface
+# =============================================================================
 
-   @jit
-   def train_step(step_i, opt_state, x, y, x_locs):
-       params = get_params(opt_state)
-       grads = grad(loss_fn, argnums=0)(params, x, y, x_locs)
-       return opt_update(step_i, grads, opt_state)
+class SparseGaussianProcessRegression:
+    def __init__(self, x_locs, kernel, kernel_params, sigma, optimize_locs=False):
+        self.kernel = kernel
+        self.kernel_params = tree_map(lambda p: jnp.array(p), kernel_params)
+        self.sigma = jnp.array(sigma)
 
-   for step_i in range(n_steps):
-       opt_state = train_step(step_i, opt_state, x, y, x_locs)
-       if step_i % verbose == 0:
-           params = get_params(opt_state)
-           loss = loss_fn(params, x, y, x_locs)
-           print(" loss : {:.3f}".format(float(loss)))
+        self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
+        self.optimize_locs = optimize_locs
+        if optimize_locs:
+            self.params["x_locs"] = jnp.array(x_locs)
+            self.x_locs = self.params["x_locs"]
+        else:
+            self.x_locs = jnp.array(x_locs)
+        self.params_uncostrained = uncostrain_parameters(self.params, ignore=['x_locs'])
 
-   params = get_params(opt_state)
+    def print(self, **kwargs):
+        return print_model(self, **kwargs)
 
-   return params
 
+
+#def sgpr_optimize(
+#   params,
+#   x,
+#   y,
+#   x_locs,
+#   kernel,
+#   n_steps=100,
+#   step_size=0.01,
+#   verbose=20,
+#):
+#   '''
+#   Optimize a Sparse Gaussian Process Regression model (Projected Processes).
+#   Arguments
+#   ---------
+#   params          : dict
+#                   Dictionary of parameters. Should have a 'kernel_params' keyword
+#                   to specify kernel parameters (a dictionary) and a 'sigma' keyword
+#                   to specify the noise. If the input locations should be optimized, they
+#                   must be included in `params` dictionary under the keyword 'x_locs'.
+#                   In this case, `x_locs` is ignored.
+#   x               : jnp.ndarray, (M, F)
+#                   Input matrix of M samples and F features
+#   y               : jnp.ndarray, (N, 1)
+#                   Target matrix with M samples and 1 target
+#   x_locs          : jnp.ndarray, (N, F)
+#                   Input locations (N <= M) with F features
+#   kernel          : callable
+#                   Kernel function
+#   n_steps         : int
+#                   Number of optimization steps
+#   step_size       : float
+#                   Step size / learning rate
+#   verbose         : int
+#                   Frequency for printing the loss (negative log marginal likelihood)
+#   Returns
+#   -------
+#   params          : dict
+#                   Optimized parameters
+#   '''
+#
+#   opt_init, opt_update, get_params = jax_optim.adam(step_size=step_size)
+#   opt_state = opt_init(params)
+#   loss_fn = partial(sgpr_log_marginal_likelihood, kernel=kernel, return_negative=True)
+#
+#   @jit
+#   def train_step(step_i, opt_state, x, y, x_locs):
+#       params = get_params(opt_state)
+#       grads = grad(loss_fn, argnums=0)(params, x, y, x_locs)
+#       return opt_update(step_i, grads, opt_state)
+#
+#   for step_i in range(n_steps):
+#       opt_state = train_step(step_i, opt_state, x, y, x_locs)
+#       if step_i % verbose == 0:
+#           params = get_params(opt_state)
+#           loss = loss_fn(params, x, y, x_locs)
+#           print(" loss : {:.3f}".format(float(loss)))
+#
+#   params = get_params(opt_state)
+#
+#   return params
