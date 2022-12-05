@@ -50,12 +50,13 @@ def reference_matern_kernel(x1, x2, nu, params):
 # ============================================================================
 # Squared exponential kernel
 # ============================================================================
+@pytest.mark.parametrize("dim", [1, 10])
 @pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
-def test_squared_exponential_kernel(lengthscale):
+def test_squared_exponential_kernel(dim, lengthscale):
     key = random.PRNGKey(2022)
-    X1 = random.normal(key, shape=(10, 10))
+    X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
-    X2 = random.normal(subkey, shape=(20, 10))
+    X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": lengthscale}
 
     K = squared_exponential_kernel(X1, X2, params)
@@ -67,12 +68,13 @@ def test_squared_exponential_kernel(lengthscale):
 # ============================================================================
 # Matern kernel
 # ============================================================================
+@pytest.mark.parametrize("dim", [1, 10])
 @pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
-def test_matern12_kernel(lengthscale):
+def test_matern12_kernel(dim, lengthscale):
     key = random.PRNGKey(2022)
-    X1 = random.normal(key, shape=(10, 10))
+    X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
-    X2 = random.normal(subkey, shape=(20, 10))
+    X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": lengthscale}
 
     K = m12_kernel(X1, X2, params)
@@ -81,12 +83,13 @@ def test_matern12_kernel(lengthscale):
     assert_allclose(K, K_ref)
 
 
+@pytest.mark.parametrize("dim", [1, 10])
 @pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
-def test_matern32_kernel(lengthscale):
+def test_matern32_kernel(dim, lengthscale):
     key = random.PRNGKey(2022)
-    X1 = random.normal(key, shape=(10, 10))
+    X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
-    X2 = random.normal(subkey, shape=(20, 10))
+    X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": lengthscale}
 
     K = m32_kernel(X1, X2, params)
@@ -95,12 +98,13 @@ def test_matern32_kernel(lengthscale):
     assert_allclose(K, K_ref)
 
 
+@pytest.mark.parametrize("dim", [1, 10])
 @pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
-def test_matern52_kernel(lengthscale):
+def test_matern52_kernel(dim, lengthscale):
     key = random.PRNGKey(2022)
-    X1 = random.normal(key, shape=(10, 10))
+    X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
-    X2 = random.normal(subkey, shape=(20, 10))
+    X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": lengthscale}
 
     K = m52_kernel(X1, X2, params)
