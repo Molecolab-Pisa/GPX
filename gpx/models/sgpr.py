@@ -113,7 +113,7 @@ def fit(params, x, y, x_locs, kernel):
    return c, y_mean
 
 
-def sgpr_predict(
+def predict(
    params, x_locs, x, c, y_mean, kernel, full_covariance=False, jitter=1e-6
 ):
    '''
@@ -147,16 +147,14 @@ def sgpr_predict(
    '''
 
    kernel_params, sigma = split_params(params)
-   kernel_params = {p: softplus(v) for p, v in kernel_params.items()}
-   sigma = softplus(sigma)
    x_locs = params["x_locs"] if "x_locs" in params.keys() else x_locs
 
-   K_mn = kmap(kernel, x_locs, x, kernel_params)
+   K_mn = kernel(x_locs, x, kernel_params)
    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
 
    if full_covariance:
        m = x_locs.shape[0]
-       K_mm = kmap(kernel, x_locs, x_locs, kernel_params)
+       K_mm = kernel(x_locs, x_locs, kernel_params)
        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * jitter, lower=True)
        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
        L_m = jsp.linalg.cholesky(
@@ -165,7 +163,7 @@ def sgpr_predict(
        )
        H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
        C_nn = (
-           kmap(kernel, x, x, kernel_params)
+           kernel(x, x, kernel_params)
            - jnp.dot(G_mn.T, G_mn)
            + jnp.dot(H_mn.T, H_mn)
        )
