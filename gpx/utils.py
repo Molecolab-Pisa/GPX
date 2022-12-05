@@ -47,10 +47,12 @@ def split_params(params):
 
 def transform_parameters(params, transform, ignore=None):
     if ignore is not None:
-        tmp = {key: params.pop(key) for key in ignore}
+        tmp = params.copy()
+        tmp = {key: value for key, value in tmp.items() if key in ignore}
+        params = {key: value for key, value in params.items() if key not in ignore}
         transformed = tree_map(lambda p: transform(p), params)
         for key in tmp:
-            constrained[key] = tmp.pop(key)
+            transformed[key] = tmp[key]
     else:
         transformed = tree_map(lambda p: transform(p), params)
     return transformed
