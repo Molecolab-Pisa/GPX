@@ -64,6 +64,9 @@ def test_squared_exponential_kernel(lengthscale):
     assert_allclose(K, K_ref)
 
 
+# ============================================================================
+# Matern kernel
+# ============================================================================
 @pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
 def test_matern12_kernel(lengthscale):
     key = random.PRNGKey(2022)
@@ -77,6 +80,30 @@ def test_matern12_kernel(lengthscale):
 
     assert_allclose(K, K_ref)
 
-# test_matern52_kernel
-# test_matern32_kernel
-# test_matern12_kernel
+
+@pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
+def test_matern32_kernel(lengthscale):
+    key = random.PRNGKey(2022)
+    X1 = random.normal(key, shape=(10, 10))
+    subkey, key = random.split(key)
+    X2 = random.normal(subkey, shape=(20, 10))
+    params = {"lengthscale": lengthscale}
+
+    K = m32_kernel(X1, X2, params)
+    K_ref = reference_matern_kernel(X1, X2, 3./2, params)
+
+    assert_allclose(K, K_ref)
+
+
+@pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
+def test_matern52_kernel(lengthscale):
+    key = random.PRNGKey(2022)
+    X1 = random.normal(key, shape=(10, 10))
+    subkey, key = random.split(key)
+    X2 = random.normal(subkey, shape=(20, 10))
+    params = {"lengthscale": lengthscale}
+
+    K = m52_kernel(X1, X2, params)
+    K_ref = reference_matern_kernel(X1, X2, 5./2, params)
+
+    assert_allclose(K, K_ref)
