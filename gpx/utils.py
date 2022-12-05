@@ -1,4 +1,7 @@
 from tabulate import tabulate
+
+import numpy as np
+
 import jax.numpy as jnp
 from jax import jit
 from jax.tree_util import tree_map
@@ -71,14 +74,17 @@ def uncostrain_parameters(params, transform=inverse_softplus, ignore=None):
 # =============================================================================
 
 
-def print_model(model, tablefmt='simple_outline'):
-    kernel_params = model.params['kernel_params']
-    sigma = model.params['sigma']
+def print_model(model, tablefmt='simple_grid'):
+    params = model.params.copy()
+    kernel_params = params.pop('kernel_params')
 
     headers = ['name', 'type', 'dtype', 'shape', 'value']
-    get_info = lambda v: (type(v), v.dtype, v.shape, v)
+    string_repr = lambda v: np.array2string(v, edgeitems=1, threshold=1)
+    get_info = lambda v: (type(v), v.dtype, v.shape, string_repr(v))
 
     fields = [['kernel '+k]+list(get_info(v)) for k, v in kernel_params.items()]
-    fields += [['sigma']+list(get_info(sigma))]
+    fields += [[k]+list(get_info(v)) for k, v in params.items()]
+    #fields += [['sigma']+list(get_info(sigma))]
 
-    print(tabulate(fields, headers=headers, tablefmt=tablefmt))
+    with np.printoptions(edgeitems=0):
+        print(tabulate(fields, headers=headers, tablefmt=tablefmt))

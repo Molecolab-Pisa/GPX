@@ -196,6 +196,17 @@ class SparseGaussianProcessRegression:
         return print_model(self, **kwargs)
 
 
+# Alias
+SGPR = SparseGaussianProcessRegression
+
+
+# Export
+__all__ = [
+    "SparseGaussianProcessRegression",
+    "SGPR",
+]
+
+
 
 #def sgpr_optimize(
 #   params,
