@@ -171,6 +171,7 @@ class GaussianProcessRegression:
 
         x0, treedef = tree_flatten(self.params_uncostrained)
 
+        # Fix training with x_locs
         def loss(xt):
             params = tree_unflatten(treedef, xt)
             params = constrain_parameters(params)
