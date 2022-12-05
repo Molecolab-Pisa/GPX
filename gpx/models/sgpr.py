@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad
-from jax.tree_util import tree_map, tree_flatten, tree_unflatten
+from jax.tree_util import tree_map
+from jax.flatten_util import ravel_pytree
 
 from scipy.optimize import minimize
 
@@ -13,8 +14,6 @@ from ..utils import (
     uncostrain_parameters,
     split_params,
     print_model,
-    flatten_arrays,
-    unflatten_arrays,
 )
 
 
@@ -223,34 +222,26 @@ class SparseGaussianProcessRegression:
         )
 
     def fit(self, x, y):
-
-        x0, treedef = tree_flatten(self.params_uncostrained)
-        x0, shapes = flatten_arrays(x0)
+        x0, unravel_fn = ravel_pytree(self.params_uncostrained)
 
         def loss(xt):
-            xt = unflatten_arrays(xt, shapes)
-            params = tree_unflatten(treedef, xt)
+            params = unravel_fn(xt)
             params = self.constrain_parameters(params)
             return log_marginal_likelihood(
-                params,
-                x=x,
-                y=y,
-                x_locs=self.x_locs,
-                kernel=self.kernel,
-                return_negative=True,
+                params, x=x, y=y, x_locs=self.x_locs, kernel=self.kernel, return_negative=True,
             )
 
         grad_loss = grad(loss)
 
-        optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
+        optres = minimize(loss, x0, method='L-BFGS-B', jac=grad_loss)
 
-        self.params_uncostrained = tree_unflatten(treedef, unflatten_arrays(optres.x, shapes))
+        self.params_uncostrained = unravel_fn(optres.x)
         self.params = self.constrain_parameters(self.params_uncostrained)
 
         self.optimize_results_ = optres
 
         self.c_, self.y_mean_ = fit(
-            self.params, x=x, y=y, x_locs=self.x_locs, kernel=self.kernel
+            self.params, x=x, y=y, x_locs=self.x_locs, kernel=self.kernel,
         )
 
         return self

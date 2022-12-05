@@ -2,7 +2,8 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad
-from jax.tree_util import tree_map, tree_flatten, tree_unflatten
+from jax.tree_util import tree_map
+from jax.flatten_util import ravel_pytree
 
 from scipy.optimize import minimize
 
@@ -151,30 +152,30 @@ def predict(
 
 class GaussianProcessRegression:
     def __init__(self, kernel, kernel_params, sigma):
-
         self.kernel = kernel
         self.kernel_params = tree_map(lambda p: jnp.array(p), kernel_params)
         self.sigma = jnp.array(sigma)
 
+        self.constrain_parameters = constrain_parameters
+        self.unconstrain_parameters = unconstrain_parameters
+
         self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
-        self.params_uncostrained = uncostrain_parameters(self.params)
+        self.params_uncostrained = self.uncostrain_parameters(self.params)
 
     def print(self, **kwargs):
         return print_model(self, **kwargs)
 
     def log_marginal_likelihood(self, x, y, return_negative=False):
         return log_marginal_likelihood(
-            self.params, x, y, kernel=self.kernel, return_negative=return_negative
+            self.params, x=x, y=y, kernel=self.kernel, return_negative=return_negative
         )
 
     def fit(self, x, y):
+        x0, unravel_fn = ravel_pytree(self.params_uncostrained)
 
-        x0, treedef = tree_flatten(self.params_uncostrained)
-
-        # Fix training with x_locs
         def loss(xt):
-            params = tree_unflatten(treedef, xt)
-            params = constrain_parameters(params)
+            params = unravel_fn(xt)
+            params = self.constrain_parameters(params)
             return log_marginal_likelihood(
                 params, x=x, y=y, kernel=self.kernel, return_negative=True
             )
@@ -183,12 +184,12 @@ class GaussianProcessRegression:
 
         optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
 
-        self.params_uncostrained = tree_unflatten(treedef, optres.x)
-        self.params = constrain_parameters(self.params_uncostrained)
+        self.params_uncostrained = unravel_fn(optres.x)
+        self.params = self.constrain_parameters(self.params_uncostrained)
 
         self.optimize_results_ = optres
 
-        self.c_, self.y_mean_ = fit(self.params, x, y, self.kernel)
+        self.c_, self.y_mean_ = fit(self.params, x=x, y=y, kernel=self.kernel)
         self.x_train = x
 
         return self
@@ -196,11 +197,11 @@ class GaussianProcessRegression:
     def predict(self, x, full_covariance=False):
         return predict(
             self.params,
-            self.x_train,
-            x,
-            self.c_,
-            self.y_mean_,
-            self.kernel,
+            x_train=self.x_train,
+            x=x,
+            c=self.c_,
+            y_mean=self.y_mean_,
+            kernel=self.kernel,
             full_covariance=full_covariance,
         )
 
