@@ -6,8 +6,10 @@ import jax
 import jax.numpy as jnp
 from jax import random
 
+from scipy.special import gamma, kv
+
 import gpx
-from gpx.kernels import squared_exponential_kernel
+from gpx.kernels import squared_exponential_kernel, m12_kernel, m32_kernel, m52_kernel
 
 
 # We want float64 enabled in JAX when importing gpx
@@ -30,6 +32,21 @@ def reference_squared_exponential_kernel(x1, x2, params):
     return K
 
 
+def reference_matern_kernel(x1, x2, nu, params):
+    n1, _ = x1.shape
+    n2, _ = x2.shape
+    K = np.zeros((n1, n2))
+    for i in range(n1):
+        for j in range(n2):
+            dist = x1[i] - x2[j]
+            dist = jnp.dot(dist.T, dist)**0.5
+            dist = dist / params['lengthscale']
+            fact = jnp.sqrt(2*nu) * dist
+            K[i, j] = ((2.**(1.0-nu))/gamma(nu)) * (fact**nu) * kv(nu, fact)
+    return K
+
+
+
 # ============================================================================
 # Squared exponential kernel
 # ============================================================================
@@ -46,6 +63,19 @@ def test_squared_exponential_kernel(lengthscale):
 
     assert_allclose(K, K_ref)
 
+
+@pytest.mark.parametrize("lengthscale", [0.5, 1.0, 2.0])
+def test_matern12_kernel(lengthscale):
+    key = random.PRNGKey(2022)
+    X1 = random.normal(key, shape=(10, 10))
+    subkey, key = random.split(key)
+    X2 = random.normal(subkey, shape=(20, 10))
+    params = {"lengthscale": lengthscale}
+
+    K = m12_kernel(X1, X2, params)
+    K_ref = reference_matern_kernel(X1, X2, 1./2, params)
+
+    assert_allclose(K, K_ref)
 
 # test_matern52_kernel
 # test_matern32_kernel
