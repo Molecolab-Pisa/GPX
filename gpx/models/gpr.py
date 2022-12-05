@@ -7,7 +7,7 @@ from jax.flatten_util import ravel_pytree
 
 from scipy.optimize import minimize
 
-from ..utils import constrain_parameters, uncostrain_parameters, split_params, print_model
+from ..utils import constrain_parameters, unconstrain_parameters, split_params, print_model
 
 
 # =============================================================================
@@ -160,7 +160,7 @@ class GaussianProcessRegression:
         self.unconstrain_parameters = unconstrain_parameters
 
         self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
-        self.params_uncostrained = self.uncostrain_parameters(self.params)
+        self.params_unconstrained = self.unconstrain_parameters(self.params)
 
     def print(self, **kwargs):
         return print_model(self, **kwargs)
@@ -171,7 +171,7 @@ class GaussianProcessRegression:
         )
 
     def fit(self, x, y):
-        x0, unravel_fn = ravel_pytree(self.params_uncostrained)
+        x0, unravel_fn = ravel_pytree(self.params_unconstrained)
 
         def loss(xt):
             params = unravel_fn(xt)
@@ -184,8 +184,8 @@ class GaussianProcessRegression:
 
         optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
 
-        self.params_uncostrained = unravel_fn(optres.x)
-        self.params = self.constrain_parameters(self.params_uncostrained)
+        self.params_unconstrained = unravel_fn(optres.x)
+        self.params = self.constrain_parameters(self.params_unconstrained)
 
         self.optimize_results_ = optres
 

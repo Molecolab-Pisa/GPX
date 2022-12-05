@@ -11,7 +11,7 @@ from scipy.optimize import minimize
 
 from ..utils import (
     constrain_parameters,
-    uncostrain_parameters,
+    unconstrain_parameters,
     split_params,
     print_model,
 )
@@ -190,21 +190,20 @@ class SparseGaussianProcessRegression:
 
         self.optimize_locs = optimize_locs
         if optimize_locs:
-
             self.params["x_locs"] = jnp.array(x_locs)
             self.x_locs = self.params["x_locs"]
 
             self.constrain_parameters = partial(constrain_parameters, ignore=["x_locs"])
-            self.uncostrain_parameters = partial(
-                uncostrain_parameters, ignore=["x_locs"]
+            self.unconstrain_parameters = partial(
+                unconstrain_parameters, ignore=["x_locs"]
             )
 
         else:
             self.x_locs = jnp.array(x_locs)
             self.constrain_parameters = constrain_parameters
-            self.uncostrain_parameters = uncostrain_parameters
+            self.unconstrain_parameters = unconstrain_parameters
 
-        self.params_uncostrained = self.uncostrain_parameters(
+        self.params_unconstrained = self.unconstrain_parameters(
             self.params, ignore=["x_locs"]
         )
 
@@ -222,7 +221,7 @@ class SparseGaussianProcessRegression:
         )
 
     def fit(self, x, y):
-        x0, unravel_fn = ravel_pytree(self.params_uncostrained)
+        x0, unravel_fn = ravel_pytree(self.params_unconstrained)
 
         def loss(xt):
             params = unravel_fn(xt)
@@ -235,8 +234,8 @@ class SparseGaussianProcessRegression:
 
         optres = minimize(loss, x0, method='L-BFGS-B', jac=grad_loss)
 
-        self.params_uncostrained = unravel_fn(optres.x)
-        self.params = self.constrain_parameters(self.params_uncostrained)
+        self.params_unconstrained = unravel_fn(optres.x)
+        self.params = self.constrain_parameters(self.params_unconstrained)
 
         self.optimize_results_ = optres
 

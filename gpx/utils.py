@@ -65,20 +65,20 @@ def constrain_parameters(params, transform=softplus, ignore=None):
     return transform_parameters(params, transform=transform, ignore=ignore)
 
 
-def uncostrain_parameters(params, transform=inverse_softplus, ignore=None):
+def unconstrain_parameters(params, transform=inverse_softplus, ignore=None):
     return transform_parameters(params, transform=transform, ignore=ignore)
 
 
-def flatten_arrays(arrays):
-    shapes = [a.shape for a in arrays]
-    arrays = [a.reshape(-1) for a in arrays]
-    return arrays, shapes
-
-
-def unflatten_arrays(arrays, shapes):
-    if len(arrays) != len(shapes):
-        raise RuntimeError('Incompatible number of shapes/arrays')
-    return [a.reshape(s) for a, s in zip(arrays, shapes)]
+#def flatten_arrays(arrays):
+#    shapes = [a.shape for a in arrays]
+#    arrays = [a.reshape(-1) for a in arrays]
+#    return arrays, shapes
+#
+#
+#def unflatten_arrays(arrays, shapes):
+#    if len(arrays) != len(shapes):
+#        raise RuntimeError('Incompatible number of shapes/arrays')
+#    return [a.reshape(s) for a, s in zip(arrays, shapes)]
 
 
 # =============================================================================
@@ -96,7 +96,6 @@ def print_model(model, tablefmt='simple_grid'):
 
     fields = [['kernel '+k]+list(get_info(v)) for k, v in kernel_params.items()]
     fields += [[k]+list(get_info(v)) for k, v in params.items()]
-    #fields += [['sigma']+list(get_info(sigma))]
 
     with np.printoptions(edgeitems=0):
         print(tabulate(fields, headers=headers, tablefmt=tablefmt))
