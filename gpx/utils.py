@@ -69,6 +69,18 @@ def uncostrain_parameters(params, transform=inverse_softplus, ignore=None):
     return transform_parameters(params, transform=transform, ignore=ignore)
 
 
+def flatten_arrays(arrays):
+    shapes = [a.shape for a in arrays]
+    arrays = [a.reshape(-1) for a in arrays]
+    return arrays, shapes
+
+
+def unflatten_arrays(arrays, shapes):
+    if len(arrays) != len(shapes):
+        raise RuntimeError('Incompatible number of shapes/arrays')
+    return [a.reshape(s) for a, s in zip(arrays, shapes)]
+
+
 # =============================================================================
 # Printing
 # =============================================================================

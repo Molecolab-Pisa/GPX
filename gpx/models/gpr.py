@@ -189,7 +189,6 @@ class GaussianProcessRegression:
 
         self.c_, self.y_mean_ = fit(self.params, x, y, self.kernel)
         self.x_train = x
-        self.y_train = y
 
         return self
 
