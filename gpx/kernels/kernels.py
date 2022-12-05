@@ -89,7 +89,7 @@ matern52_kernel = kernelize(matern52_kernel_base)
 
 
 # =============================================================================
-# Kernel abbreviations
+# Kernel aliases
 # =============================================================================
 
 se_kernel = squared_exponential_kernel

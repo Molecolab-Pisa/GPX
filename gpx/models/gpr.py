@@ -49,8 +49,10 @@ def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
         - jnp.sum(jnp.log(jnp.diag(L_m)))
         - m * 0.5 * jnp.log(2.0 * jnp.pi)
     )
+
     if return_negative:
         return -mll
+
     return mll
 
 
