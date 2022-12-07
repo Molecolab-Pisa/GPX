@@ -1,6 +1,6 @@
 import functools
 import jax.numpy as jnp
-from jax import vmap
+from jax import vmap, jit
 
 from ..utils import squared_distances
 
@@ -38,51 +38,77 @@ def kernelize(kernel_func):
 
 
 # =============================================================================
-# Kernel Functions
+# Squared Exponential Kernel
 # =============================================================================
 
 
-def squared_exponential_kernel(x1, x2, params):
-    z1 = x1 / params["lengthscale"]
-    z2 = x2 / params["lengthscale"]
+@jit
+def _squared_exponential_kernel(x1, x2, lengthscale):
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
     return jnp.exp(-d2)
 
 
-# def squared_exponential_kernel_base(x1, x2, params):
-#    z1 = x1 / params["lengthscale"]
-#    z2 = x2 / params["lengthscale"]
-#    d2 = jnp.sum((z1 - z2) ** 2)
-#    return jnp.exp(-d2)
-#
-# squared_exponential_kernel = kernelize(squared_exponential_kernel_base)
+def squared_exponential_kernel(x1, x2, params):
+    return _squared_exponential_kernel(x1, x2, params['lengthscale'])
+
+
+# =============================================================================
+# Matern(1/2) Kernel
+# =============================================================================
+
+
+@jit
+def _matern12_kernel_base(x1, x2, lengthscale):
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
+    return jnp.exp(-d)
 
 
 def matern12_kernel_base(x1, x2, params):
-    z1 = x1 / params["lengthscale"]
-    z2 = x2 / params["lengthscale"]
-    d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
-    return jnp.exp(-d)
+    return _matern12_kernel_base(x1, x2, params['lengthscale'])
 
 
 matern12_kernel = kernelize(matern12_kernel_base)
 
 
-def matern32_kernel_base(x1, x2, params):
-    z1 = x1 / params["lengthscale"]
-    z2 = x2 / params["lengthscale"]
+# =============================================================================
+# Matern(3/2) Kernel
+# =============================================================================
+
+
+@jit
+def _matern32_kernel_base(x1, x2, lengthscale):
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
     d = jnp.sqrt(3.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d) * jnp.exp(-d)
+
+
+def matern32_kernel_base(x1, x2, params):
+    return _matern32_kernel_base(x1, x2, params['lengthscale'])
 
 
 matern32_kernel = kernelize(matern32_kernel_base)
 
 
-def matern52_kernel_base(x1, x2, params):
-    z1 = x1 / params["lengthscale"]
-    z2 = x2 / params["lengthscale"]
+# =============================================================================
+# Matern(3/2) Kernel
+# =============================================================================
+
+
+@jit
+def _matern52_kernel_base(x1, x2, lengthscale):
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
     return (1.0 + d + d**2 / 3.0) * jnp.exp(-d)
+
+
+def matern52_kernel_base(x1, x2, params):
+    return _matern52_kernel_base(x1, x2, params['lengthscale'])
 
 
 matern52_kernel = kernelize(matern52_kernel_base)
@@ -109,9 +135,12 @@ __all__ = [
     "se_kernel",
     "rbf_kernel",
     "matern12_kernel",
+    "matern12_kernel_base",
     "m12_kernel",
     "matern32_kernel",
+    "matern32_kernel_base",
     "m32_kernel",
     "matern52_kernel",
+    "matern52_kernel_base",
     "m52_kernel",
 ]
