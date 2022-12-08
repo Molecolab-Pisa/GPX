@@ -7,6 +7,7 @@ from jax.flatten_util import ravel_pytree
 
 from scipy.optimize import minimize
 
+from .utils import sample
 from ..utils import constrain_parameters, unconstrain_parameters, split_params, print_model
 
 
@@ -213,6 +214,9 @@ class GaussianProcessRegression:
             kernel=self.kernel,
             full_covariance=full_covariance,
         )
+
+    def sample(self, key, x, n_samples=1):
+        return sample(key, self, x, n_samples=n_samples)
 
 
 # Alias
