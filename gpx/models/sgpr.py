@@ -246,6 +246,7 @@ class SparseGaussianProcessRegression:
         return self
 
     def predict(self, x, full_covariance=False):
+        # TODO: add prediction using prior only
         return predict(
             self.params,
             x_locs=self.x_locs,
