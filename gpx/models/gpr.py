@@ -86,7 +86,7 @@ def fit(params, x, y, kernel):
     y_mean = jnp.mean(y)
     y = y - y_mean
 
-    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(x.shape[0])
+    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(y.shape[0])
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
 
     return c, y_mean
@@ -136,7 +136,7 @@ def predict(
 
     if full_covariance:
         C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
-            x_train.shape[0]
+            K_mn.shape[0]
         )
         L_m = jsp.linalg.cholesky(C_mm, lower=True)
         G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
@@ -201,7 +201,7 @@ class GaussianProcessRegression:
             y_mean = jnp.zeros(x.shape)
             if full_covariance:
                 cov = self.kernel(x, x, self.params['kernel_params'])
-                cov = cov + self.params['sigma'] * jnp.eye(x.shape[0])
+                cov = cov + self.params['sigma'] * jnp.eye(cov.shape[0])
                 return y_mean, cov
             return y_mean
 
