@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad
@@ -8,7 +7,12 @@ from jax.flatten_util import ravel_pytree
 from scipy.optimize import minimize
 
 from .utils import sample
-from ..utils import constrain_parameters, unconstrain_parameters, split_params, print_model
+from ..utils import (
+    constrain_parameters,
+    unconstrain_parameters,
+    split_params,
+    print_model,
+)
 
 
 # =============================================================================
@@ -196,12 +200,12 @@ class GaussianProcessRegression:
         return self
 
     def predict(self, x, full_covariance=False):
-        if not hasattr(self, 'c_'):
+        if not hasattr(self, "c_"):
             # not trained, return prior values
             y_mean = jnp.zeros(x.shape)
             if full_covariance:
-                cov = self.kernel(x, x, self.params['kernel_params'])
-                cov = cov + self.params['sigma'] * jnp.eye(cov.shape[0])
+                cov = self.kernel(x, x, self.params["kernel_params"])
+                cov = cov + self.params["sigma"] * jnp.eye(cov.shape[0])
                 return y_mean, cov
             return y_mean
 

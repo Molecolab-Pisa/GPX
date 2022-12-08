@@ -8,13 +8,12 @@ from jax import random
 
 from scipy.special import gamma, kv
 
-import gpx
 from gpx.kernels import squared_exponential_kernel, m12_kernel, m32_kernel, m52_kernel
 
 
 # We want float64 enabled in JAX when importing gpx
 def test_float64():
-    assert jax.config.x64_enabled == True
+    assert jax.config.x64_enabled is True
 
 
 # ============================================================================
@@ -39,12 +38,11 @@ def reference_matern_kernel(x1, x2, nu, params):
     for i in range(n1):
         for j in range(n2):
             dist = x1[i] - x2[j]
-            dist = jnp.dot(dist.T, dist)**0.5
-            dist = dist / params['lengthscale']
-            fact = jnp.sqrt(2*nu) * dist
-            K[i, j] = ((2.**(1.0-nu))/gamma(nu)) * (fact**nu) * kv(nu, fact)
+            dist = jnp.dot(dist.T, dist) ** 0.5
+            dist = dist / params["lengthscale"]
+            fact = jnp.sqrt(2 * nu) * dist
+            K[i, j] = ((2.0 ** (1.0 - nu)) / gamma(nu)) * (fact**nu) * kv(nu, fact)
     return K
-
 
 
 # ============================================================================
@@ -78,7 +76,7 @@ def test_matern12_kernel(dim, lengthscale):
     params = {"lengthscale": lengthscale}
 
     K = m12_kernel(X1, X2, params)
-    K_ref = reference_matern_kernel(X1, X2, 1./2, params)
+    K_ref = reference_matern_kernel(X1, X2, 1.0 / 2, params)
 
     assert_allclose(K, K_ref)
 
@@ -93,7 +91,7 @@ def test_matern32_kernel(dim, lengthscale):
     params = {"lengthscale": lengthscale}
 
     K = m32_kernel(X1, X2, params)
-    K_ref = reference_matern_kernel(X1, X2, 3./2, params)
+    K_ref = reference_matern_kernel(X1, X2, 3.0 / 2, params)
 
     assert_allclose(K, K_ref)
 
@@ -108,6 +106,6 @@ def test_matern52_kernel(dim, lengthscale):
     params = {"lengthscale": lengthscale}
 
     K = m52_kernel(X1, X2, params)
-    K_ref = reference_matern_kernel(X1, X2, 5./2, params)
+    K_ref = reference_matern_kernel(X1, X2, 5.0 / 2, params)
 
     assert_allclose(K, K_ref)

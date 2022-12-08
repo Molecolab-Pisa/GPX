@@ -1,6 +1,5 @@
 from functools import partial
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad
@@ -22,7 +21,9 @@ from ..utils import (
 # =============================================================================
 
 
-def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False, jitter=1e-6):
+def log_marginal_likelihood(
+    params, x, y, x_locs, kernel, return_negative=False, jitter=1e-6
+):
     """
     Computes the log marginal likelihood for Sparse Gaussian Process Regression
     (projected processes).
@@ -227,12 +228,17 @@ class SparseGaussianProcessRegression:
             params = unravel_fn(xt)
             params = self.constrain_parameters(params)
             return log_marginal_likelihood(
-                params, x=x, y=y, x_locs=self.x_locs, kernel=self.kernel, return_negative=True,
+                params,
+                x=x,
+                y=y,
+                x_locs=self.x_locs,
+                kernel=self.kernel,
+                return_negative=True,
             )
 
         grad_loss = grad(loss)
 
-        optres = minimize(loss, x0, method='L-BFGS-B', jac=grad_loss)
+        optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
 
         self.params_unconstrained = unravel_fn(optres.x)
         self.params = self.constrain_parameters(self.params_unconstrained)
@@ -240,7 +246,11 @@ class SparseGaussianProcessRegression:
         self.optimize_results_ = optres
 
         self.c_, self.y_mean_ = fit(
-            self.params, x=x, y=y, x_locs=self.x_locs, kernel=self.kernel,
+            self.params,
+            x=x,
+            y=y,
+            x_locs=self.x_locs,
+            kernel=self.kernel,
         )
 
         return self

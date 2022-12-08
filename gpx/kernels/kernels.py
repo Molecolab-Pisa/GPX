@@ -1,6 +1,5 @@
-import functools
 import jax.numpy as jnp
-from jax import vmap, jit
+from jax import jit
 
 from .utils import kernelize
 from ..utils import squared_distances
