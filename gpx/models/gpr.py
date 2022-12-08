@@ -195,6 +195,15 @@ class GaussianProcessRegression:
         return self
 
     def predict(self, x, full_covariance=False):
+        if not hasattr(self, 'c_'):
+            # not trained, return prior values
+            y_mean = jnp.zeros(x.shape)
+            if full_covariance:
+                cov = self.kernel(x, x, self.params['kernel_params'])
+                cov = cov + self.params['sigma'] * jnp.eye(x.shape[0])
+                return y_mean, cov
+            return y_mean
+
         return predict(
             self.params,
             x_train=self.x_train,
