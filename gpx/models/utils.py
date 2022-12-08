@@ -20,6 +20,8 @@ def sample(key, model, x, n_samples=1):
     samples: a JAX.Array of shape (num_y, num_samples, num_observations)
     """
     y_mean, y_cov = model.predict(x, full_covariance=True)
+    # small jitter for stabilization
+    y_cov = y_cov + 1e-10 * jnp.eye(y_cov.shape[0])
     if y_mean.ndim > 1:
         samples = []
         for dim in range(y_mean.shape[1]):
