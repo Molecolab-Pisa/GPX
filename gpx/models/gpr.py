@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import grad
+from jax import grad, jit
 from jax.tree_util import tree_map
 from jax.flatten_util import ravel_pytree
 
@@ -47,7 +47,7 @@ def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     y = y - y_mean
     m = y.shape[0]
 
-    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(m)
+    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(m) + 1e-10 * jnp.eye(m)
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
     mll = (
@@ -185,7 +185,7 @@ class GaussianProcessRegression:
                 params, x=x, y=y, kernel=self.kernel, return_negative=True
             )
 
-        grad_loss = grad(loss)
+        grad_loss = jit(grad(loss))
 
         optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
 
