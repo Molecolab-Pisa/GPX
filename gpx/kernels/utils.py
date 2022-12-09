@@ -1,7 +1,7 @@
 import functools
 from functools import partial
 import jax.numpy as jnp
-from jax import vmap, jvp
+from jax import vmap, jvp, jacrev, jacfwd
 
 
 # =============================================================================
@@ -39,6 +39,53 @@ def kernelize(kernel_func):
 # =============================================================================
 # Derivative Kernels
 # =============================================================================
+
+
+def _grad0_kernelize(k):
+    return kernelize(jacrev(k), argnums=0)
+
+
+def _grad1_kernelize(k):
+    return kernelize(jacrev(k), argnums=1)
+
+
+def _grad01_kernelize(k):
+    return kernelize(jacfwd(jacrev(k, argnums=0), argnums=1))
+
+
+def grad0_kernelize(k):
+    d0k = _grad0_kernelize(k)
+
+    def wrapper(x1, x2, params):
+        n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
+        gram = d0k(x1, x2, params)
+        gram = jnp.transpose(gram, axes=(0, 2, 1))
+        return jnp.reshape(gram, (n * d, m))
+
+    return wrapper
+
+
+def grad1_kernelize(k):
+    d1k = _grad1_kernelize(k)
+
+    def wrapper(x1, x2, params):
+        n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
+        gram = d1k(x1, x2, params)
+        return jnp.reshape(gram, n, m * d)
+
+    return wrapper
+
+
+def grad01_kernelize(k):
+    d01k = _grad01_kernelize(k)
+
+    def wrapper(x1, x2, params):
+        n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
+        gram = d01k(x1, x2, params)
+        gram = jnp.transpose(gram, axes=(0, 2, 1, 3))
+        return jnp.reshape(gram, (n * d, m * d))
+
+    return wrapper
 
 
 def d0_k(k):
