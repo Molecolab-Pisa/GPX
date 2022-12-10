@@ -225,14 +225,3 @@ def grad_kernel(k, argnums):
         raise ValueError(
             f"argnums={argnums} is not valid. Allowed argnums: 0, 1, (0, 1)"
         )
-
-
-# =============================================================================
-# Export
-# =============================================================================
-
-__all__ = [
-    "grad_kernelize",
-    "grad_kernel",
-    "kernelize",
-]

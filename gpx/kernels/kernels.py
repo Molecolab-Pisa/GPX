@@ -102,23 +102,3 @@ rbf_kernel = squared_exponential_kernel
 m12_kernel = matern12_kernel
 m32_kernel = matern32_kernel
 m52_kernel = matern52_kernel
-
-
-# =============================================================================
-# Exports
-# =============================================================================
-
-__all__ = [
-    "squared_exponential_kernel",
-    "se_kernel",
-    "rbf_kernel",
-    "matern12_kernel",
-    "matern12_kernel_base",
-    "m12_kernel",
-    "matern32_kernel",
-    "matern32_kernel_base",
-    "m32_kernel",
-    "matern52_kernel",
-    "matern52_kernel_base",
-    "m52_kernel",
-]
