@@ -64,6 +64,7 @@ def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     return mll
 
 
+@partial(jit, static_argnums=3)
 def fit(params, x, y, kernel):
     """
     Fits a Gaussian Process Regression model.
@@ -98,6 +99,7 @@ def fit(params, x, y, kernel):
     return c, y_mean
 
 
+@partial(jit, static_argnums=5)
 def predict(
     params,
     x_train,

@@ -78,6 +78,7 @@ def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False)
     return mll
 
 
+@partial(jit, static_argnums=4)
 def fit(params, x, y, x_locs, kernel):
     """
     Fits a Sparse Gaussian Process Regression model (Projected Processes).
@@ -118,7 +119,8 @@ def fit(params, x, y, x_locs, kernel):
     return c, y_mean
 
 
-def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False, jitter=1e-6):
+@partial(jit, static_argnums=5)
+def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False):
     """
     Predicts using a Sparse Gaussian Process Regression model (Projected Processes).
     Arguments
@@ -158,10 +160,10 @@ def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False, jitter=
     if full_covariance:
         m = x_locs.shape[0]
         K_mm = kernel(x_locs, x_locs, kernel_params)
-        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * jitter, lower=True)
+        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * 1e-10, lower=True)
         G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
         L_m = jsp.linalg.cholesky(
-            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * jitter,
+            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * 1e-10,
             lower=True,
         )
         H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
