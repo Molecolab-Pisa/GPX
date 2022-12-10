@@ -42,11 +42,11 @@ def kernelize(kernel_func):
 
 
 def _grad0_kernelize(k):
-    return kernelize(jacrev(k), argnums=0)
+    return kernelize(jacrev(k, argnums=0))
 
 
 def _grad1_kernelize(k):
-    return kernelize(jacrev(k), argnums=1)
+    return kernelize(jacrev(k, argnums=1))
 
 
 def _grad01_kernelize(k):
@@ -95,7 +95,7 @@ def grad1_kernelize(k):
         """
         n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
         gram = d1k(x1, x2, params)
-        return jnp.reshape(gram, n, m * d)
+        return jnp.reshape(gram, (n, m * d))
 
     return wrapper
 
