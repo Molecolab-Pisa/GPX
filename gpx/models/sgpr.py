@@ -2,7 +2,7 @@ from functools import partial
 
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import grad
+from jax import grad, jit
 from jax.tree_util import tree_map
 from jax.flatten_util import ravel_pytree
 
@@ -21,9 +21,8 @@ from ..utils import (
 # =============================================================================
 
 
-def log_marginal_likelihood(
-    params, x, y, x_locs, kernel, return_negative=False, jitter=1e-6
-):
+@partial(jit, static_argnums=4)
+def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False):
     """
     Computes the log marginal likelihood for Sparse Gaussian Process Regression
     (projected processes).
@@ -63,17 +62,15 @@ def log_marginal_likelihood(
     K_mm = kernel(x_locs, x_locs, kernel_params)
     K_mn = kernel(x_locs, x, kernel_params)
 
-    L_m = jsp.linalg.cholesky(K_mm + jitter * jnp.eye(m), lower=True)
+    L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(m), lower=True)
     G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
     C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n)
     L_n = jsp.linalg.cholesky(C_nn, lower=True)
-    c_n = jnp.linalg.solve(C_nn, y)
+    cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
 
-    mll = (
-        -0.5 * jnp.squeeze(jnp.dot(y.T, c_n))
-        - jnp.sum(jnp.log(jnp.diag(L_n)))
-        - n * 0.5 * jnp.log(2.0 * jnp.pi)
-    )
+    mll = -0.5 * jnp.sum(jnp.square(cy))
+    mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
+    mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
 
     if return_negative:
         return -mll
