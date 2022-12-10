@@ -232,9 +232,7 @@ def grad_kernel(k, argnums):
 # =============================================================================
 
 __all__ = [
-    "d0_k",
-    "d1_k",
-    "d0d1_k",
+    "grad_kernelize",
     "grad_kernel",
     "kernelize",
 ]

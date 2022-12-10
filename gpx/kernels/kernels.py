@@ -11,6 +11,17 @@ from ..utils import squared_distances
 
 
 @jit
+def _squared_exponential_kernel_base(x1, x2, lengthscale):
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    return jnp.exp(-jnp.sum((z1 - z2) ** 2))
+
+
+def squared_exponential_kernel_base(x1, x2, params):
+    return _squared_exponential_kernel_base(x1, x2, params["lengthscale"])
+
+
+@jit
 def _squared_exponential_kernel(x1, x2, lengthscale):
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
