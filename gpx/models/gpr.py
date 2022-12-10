@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
@@ -20,6 +22,7 @@ from ..utils import (
 # =============================================================================
 
 
+@partial(jit, static_argnums=3)
 def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     """
     Computes the log marginal likelihood for standard Gaussian Process Regression.
@@ -48,13 +51,12 @@ def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     m = y.shape[0]
 
     C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(m) + 1e-10 * jnp.eye(m)
-    c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
-    mll = (
-        -0.5 * jnp.squeeze(jnp.dot(y.T, c))
-        - jnp.sum(jnp.log(jnp.diag(L_m)))
-        - m * 0.5 * jnp.log(2.0 * jnp.pi)
-    )
+    cy = jsp.linalg.solve_triangular(L_m, y, lower=True)
+
+    mll = -0.5 * jnp.sum(jnp.square(cy))
+    mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
+    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
 
     if return_negative:
         return -mll
