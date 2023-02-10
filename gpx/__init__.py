@@ -1,5 +1,6 @@
 from . import kernels
 from . import models
+from . import parameters
 
 from jax.config import config
 
