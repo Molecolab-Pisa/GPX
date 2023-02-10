@@ -1,9 +1,13 @@
-import jax
 import dataclasses
 from typing import Callable
 
 
-@jax.tree_util.register_pytree_node_class
+# currently not registrable as a PyTree, as
+# we want to treat a Parameter as a leaf when
+# flattening a dictioanry of Parameter instances
+# in order to get its auxiliary data
+
+# @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
 class Parameter:
     value: float
