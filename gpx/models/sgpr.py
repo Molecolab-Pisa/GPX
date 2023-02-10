@@ -21,7 +21,7 @@ from ..utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=4)
+@partial(jit, static_argnums=[4, 5])
 def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False):
     """
     Computes the log marginal likelihood for Sparse Gaussian Process Regression
@@ -119,7 +119,7 @@ def fit(params, x, y, x_locs, kernel):
     return c, y_mean
 
 
-@partial(jit, static_argnums=5)
+@partial(jit, static_argnums=[5, 6])
 def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False):
     """
     Predicts using a Sparse Gaussian Process Regression model (Projected Processes).

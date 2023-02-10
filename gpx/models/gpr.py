@@ -22,7 +22,7 @@ from ..utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=3)
+@partial(jit, static_argnums=[3, 4])
 def log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     """
     Computes the log marginal likelihood for standard Gaussian Process Regression.
@@ -99,7 +99,7 @@ def fit(params, x, y, kernel):
     return c, y_mean
 
 
-@partial(jit, static_argnums=5)
+@partial(jit, static_argnums=[5, 6])
 def predict(
     params,
     x_train,
