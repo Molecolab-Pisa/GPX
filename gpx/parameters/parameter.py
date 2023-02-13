@@ -1,3 +1,4 @@
+import jax
 import dataclasses
 from typing import Callable
 
@@ -7,7 +8,8 @@ from typing import Callable
 # flattening a dictioanry of Parameter instances
 # in order to get its auxiliary data
 
-# @jax.tree_util.register_pytree_node_class
+
+@jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
 class Parameter:
     value: float

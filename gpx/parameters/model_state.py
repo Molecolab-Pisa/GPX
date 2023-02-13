@@ -6,6 +6,15 @@ import dataclasses
 from typing import Callable, Dict
 
 
+def _recursive_traverse_dict(dictionary):
+    for key in dictionary.keys():
+        value = dictionary[key]
+        if isinstance(value, dict):
+            yield from _recursive_traverse_dict(value)
+        else:
+            yield value
+
+
 @jax.tree_util.register_pytree_node_class
 @dataclasses.dataclass
 class ModelState:
@@ -29,30 +38,26 @@ class ModelState:
         trainable = self._params_trainable(p)
         values = self._params_value(p)
         values = jnp.where(trainable, values, jax.lax.stop_gradient(values))
-        transform_fns = self._params_transform_fns(p)
-        params = tuple(
-            Parameter(v, t, f) for v, t, f in zip(values, trainable, transform_fns)
-        )
         p_structure = jax.tree_util.tree_structure(p)
-        self._params = jax.tree_util.tree_unflatten(p_structure, params)
+        self._params = jax.tree_util.tree_unflatten(p_structure, values)
         self._params_structure = p_structure
 
     def _params_transform_fns(self, params):
-        return [p.transform_fn for p in jax.tree_util.tree_leaves(params)]
+        return [p.transform_fn for p in _recursive_traverse_dict(params)]
 
     @property
     def params_transform_fns(self):
         return self._params_transform_fns(self.params)
 
     def _params_value(self, params):
-        return jnp.array([p.value for p in jax.tree_util.tree_leaves(params)])
+        return jnp.array([p.value for p in _recursive_traverse_dict(params)])
 
     @property
     def params_value(self):
         return self._params_value(self.params)
 
     def _params_trainable(self, params):
-        return jnp.array([p.trainable for p in jax.tree_util.tree_leaves(params)])
+        return jnp.array([p.trainable for p in _recursive_traverse_dict(params)])
 
     @property
     def params_trainable(self):
@@ -79,5 +84,5 @@ class ModelState:
             Parameter(v, t, f)
             for v, t, f in zip(children, params_trainable, params_transforms)
         )
-        params = jax.tree_util.tree_unflatten(params_structure, params)
+        params = jax.tree_util.tree_unflatten(params_structure, children)
         return cls(kernel, params)
