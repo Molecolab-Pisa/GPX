@@ -18,7 +18,8 @@ def _squared_exponential_kernel_base(x1, x2, lengthscale):
 
 
 def squared_exponential_kernel_base(x1, x2, params):
-    return _squared_exponential_kernel_base(x1, x2, params["lengthscale"])
+    lengthscale = params["lengthscale"].value
+    return _squared_exponential_kernel_base(x1, x2, lengthscale)
 
 
 @jit
@@ -30,7 +31,8 @@ def _squared_exponential_kernel(x1, x2, lengthscale):
 
 
 def squared_exponential_kernel(x1, x2, params):
-    return _squared_exponential_kernel(x1, x2, params["lengthscale"])
+    lengthscale = params["lengthscale"].value
+    return _squared_exponential_kernel(x1, x2, lengthscale)
 
 
 # =============================================================================
@@ -47,7 +49,8 @@ def _matern12_kernel_base(x1, x2, lengthscale):
 
 
 def matern12_kernel_base(x1, x2, params):
-    return _matern12_kernel_base(x1, x2, params["lengthscale"])
+    lengthscale = params["lengthscale"].value
+    return _matern12_kernel_base(x1, x2, lengthscale)
 
 
 matern12_kernel = kernelize(matern12_kernel_base)
@@ -67,7 +70,8 @@ def _matern32_kernel_base(x1, x2, lengthscale):
 
 
 def matern32_kernel_base(x1, x2, params):
-    return _matern32_kernel_base(x1, x2, params["lengthscale"])
+    lengthscale = params["lengthscale"]
+    return _matern32_kernel_base(x1, x2, lengthscale)
 
 
 matern32_kernel = kernelize(matern32_kernel_base)
@@ -87,7 +91,8 @@ def _matern52_kernel_base(x1, x2, lengthscale):
 
 
 def matern52_kernel_base(x1, x2, params):
-    return _matern52_kernel_base(x1, x2, params["lengthscale"])
+    lengthscale = params["lengthscale"]
+    return _matern52_kernel_base(x1, x2, lengthscale)
 
 
 matern52_kernel = kernelize(matern52_kernel_base)
