@@ -103,10 +103,11 @@ class ModelState:
         params = jax.tree_util.tree_unflatten(params_structure, children)
         return cls(kernel, params, **opt)
 
-    def update_state(self, entry, value):
+    def update_state(self, update_dict):
         # currently only works for optional arguments
         kernel = self.kernel
         params = self.params
         opt = {entry: getattr(self, entry) for entry in self._register}
-        opt[entry] = value
+        for key, val in update_dict.items():
+            opt[key] = val
         return self.__class__(kernel, params, **opt)
