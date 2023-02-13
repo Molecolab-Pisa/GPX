@@ -79,19 +79,26 @@ class ModelState:
         params_value = jnp.where(
             params_trainable, params_value, jax.lax.stop_gradient(params_value)
         )
+
+        if len(self._register) != 0:
+            opt = {}
+            for entry in self._register:
+                opt[entry] = getattr(self, entry)
+
         return (params_value), (
             self.kernel,
             self._params_structure,
             params_trainable,
             params_transforms,
+            opt,
         )
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        kernel, params_structure, params_trainable, params_transforms = aux_data
+        kernel, params_structure, params_trainable, params_transforms, opt = aux_data
         params = tuple(
             Parameter(v, t, f)
             for v, t, f in zip(children, params_trainable, params_transforms)
         )
         params = jax.tree_util.tree_unflatten(params_structure, children)
-        return cls(kernel, params)
+        return cls(kernel, params, **opt)
