@@ -1,10 +1,7 @@
-from .parameter import Parameter
 from .utils import _recursive_traverse_dict
 
 import jax
 import jax.numpy as jnp
-
-# from typing import Callable, Dict
 
 
 @jax.tree_util.register_pytree_node_class
@@ -51,12 +48,19 @@ class ModelState:
         self._params = jax.tree_util.tree_unflatten(p_structure, values)
         self._params_structure = p_structure
 
-    def _params_transform_fns(self, params):
-        return [p.transform_fn for p in _recursive_traverse_dict(params)]
+    def _params_forward_transforms(self, params):
+        return [p.forward_transform for p in _recursive_traverse_dict(params)]
 
     @property
-    def params_transform_fns(self):
-        return self._params_transform_fns(self.params)
+    def params_forward_transforms(self):
+        return self._params_forward_transforms(self.params)
+
+    def _params_backward_transforms(self, params):
+        return [p.backward_transform for p in _recursive_traverse_dict(params)]
+
+    @property
+    def params_backward_transforms(self):
+        return self._params_backward_transforms(self.params)
 
     def _params_value(self, params):
         return jnp.array([p.value for p in _recursive_traverse_dict(params)])
@@ -75,7 +79,6 @@ class ModelState:
     def tree_flatten(self):
         params_value = self.params_value
         params_trainable = self.params_trainable
-        params_transforms = self.params_transform_fns
         params_value = jnp.where(
             params_trainable, params_value, jax.lax.stop_gradient(params_value)
         )
@@ -88,18 +91,12 @@ class ModelState:
         return (params_value), (
             self.kernel,
             self._params_structure,
-            params_trainable,
-            params_transforms,
             opt,
         )
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        kernel, params_structure, params_trainable, params_transforms, opt = aux_data
-        params = tuple(
-            Parameter(v, t, f)
-            for v, t, f in zip(children, params_trainable, params_transforms)
-        )
+        kernel, params_structure, opt = aux_data
         params = jax.tree_util.tree_unflatten(params_structure, children)
         return cls(kernel, params, **opt)
 

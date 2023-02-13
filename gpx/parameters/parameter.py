@@ -14,11 +14,12 @@ from typing import Callable
 class Parameter:
     value: float
     trainable: bool
-    transform_fn: Callable
+    forward_transform: Callable
+    backward_transform: Callable
 
     def tree_flatten(self):
         children = (self.value,)
-        aux_data = (self.trainable, self.transform_fn)
+        aux_data = (self.trainable, self.forward_transform, self.backward_transform)
         return children, aux_data
 
     @classmethod
