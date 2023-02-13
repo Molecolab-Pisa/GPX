@@ -111,7 +111,9 @@ def fit(state, x, y):
     y_mean  : jnp.ndarray, ()
             Target mean
     """
-    return _fit(params=state.params, x=x, y=y, kernel=state.kernel)
+    c, y_mean = _fit(params=state.params, x=x, y=y, kernel=state.kernel)
+    state = state.update_state(dict(c=c, y_mean=y_mean, is_fitted=True))
+    return state
 
 
 # @partial(jit, static_argnums=[5, 6])
