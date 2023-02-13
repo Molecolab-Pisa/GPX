@@ -80,8 +80,8 @@ class ModelState:
             params_trainable, params_value, jax.lax.stop_gradient(params_value)
         )
 
+        opt = {}
         if len(self._register) != 0:
-            opt = {}
             for entry in self._register:
                 opt[entry] = getattr(self, entry)
 
