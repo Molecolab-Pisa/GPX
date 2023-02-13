@@ -116,59 +116,76 @@ def fit(state, x, y):
     return state
 
 
-# @partial(jit, static_argnums=[5, 6])
-# def predict(
-#     params,
-#     x_train,
-#     x,
-#     c,
-#     y_mean,
-#     kernel,
-#     full_covariance=False,
-# ):
-#     """
-#     Predict with a Gaussian Process Regression model.
-#     Arguments
-#     ---------
-#     params          : dict
-#                     Dictionary of parameters. Should have a 'kernel_params' keyword
-#                     to specify kernel parameters (a ictionary) and a 'sigma' keyword
-#                     to specify the noise.
-#     x               : jnp.ndarray, (M, F)
-#                     Input matrix of M samples and F features
-#     y               : jnp.ndarray, (M, 1)
-#                     Target matrix of M samples and 1 target
-#     c               : jnp.ndarray, (M, 1)
-#                     Dual coefficients
-#     y_mean          : jnp.ndarray, ()
-#                     Target mean
-#     kernel          : callable
-#                     Kernel function
-#     full_covariance : bool
-#                     Whether to return also the full posterior covariance
-#     Returns
-#     -------
-#     mu              : jnp.ndarray, (M, 1)
-#                     Predicted mean
-#     C_nn            : jnp.ndarray, (M, M)
-#                     Predicted covariance
-#     """
-#
-#     kernel_params, sigma = split_params(params)
-#
-#     K_mn = kernel(x_train, x, kernel_params)
-#     mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
-#
-#     if full_covariance:
-#         C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
-#             K_mn.shape[0]
-#         )
-#         L_m = jsp.linalg.cholesky(C_mm, lower=True)
-#         G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-#         C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
-#         return mu, C_nn
-#
-#     return mu
+@partial(jit, static_argnums=[5, 6])
+def _predict(
+    params,
+    x_train,
+    x,
+    c,
+    y_mean,
+    kernel,
+    full_covariance=False,
+):
+    """
+    Predict with a Gaussian Process Regression model.
+    Arguments
+    ---------
+    params          : dict
+                    Dictionary of parameters. Should have a 'kernel_params' keyword
+                    to specify kernel parameters (a ictionary) and a 'sigma' keyword
+                    to specify the noise.
+    x               : jnp.ndarray, (M, F)
+                    Input matrix of M samples and F features
+    y               : jnp.ndarray, (M, 1)
+                    Target matrix of M samples and 1 target
+    c               : jnp.ndarray, (M, 1)
+                    Dual coefficients
+    y_mean          : jnp.ndarray, ()
+                    Target mean
+    kernel          : callable
+                    Kernel function
+    full_covariance : bool
+                    Whether to return also the full posterior covariance
+    Returns
+    -------
+    mu              : jnp.ndarray, (M, 1)
+                    Predicted mean
+    C_nn            : jnp.ndarray, (M, M)
+                    Predicted covariance
+    """
+
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+
+    K_mn = kernel(x_train, x, kernel_params)
+    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
+
+    if full_covariance:
+        C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
+            K_mn.shape[0]
+        )
+        L_m = jsp.linalg.cholesky(C_mm, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+        C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
+        return mu, C_nn
+
+    return mu
+
+
+def predict(state, x_train, x, full_covariance=False):
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Model is not fitted. Run `fit` to fit the model before prediction."
+        )
+    return _predict(
+        params=state.params,
+        x_train=x_train,
+        x=x,
+        c=state.c,
+        y_mean=state.y_mean,
+        kernel=state.kernel,
+        full_covariance=full_covariance,
+    )
 
 
 # # =============================================================================
