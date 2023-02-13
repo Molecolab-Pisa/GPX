@@ -1,18 +1,10 @@
 from .parameter import Parameter
+from .utils import _recursive_traverse_dict
 
 import jax
 import jax.numpy as jnp
 import dataclasses
 from typing import Callable, Dict
-
-
-def _recursive_traverse_dict(dictionary):
-    for key in dictionary.keys():
-        value = dictionary[key]
-        if isinstance(value, dict):
-            yield from _recursive_traverse_dict(value)
-        else:
-            yield value
 
 
 @jax.tree_util.register_pytree_node_class
