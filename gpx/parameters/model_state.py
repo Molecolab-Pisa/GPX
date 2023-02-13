@@ -3,15 +3,32 @@ from .utils import _recursive_traverse_dict
 
 import jax
 import jax.numpy as jnp
-import dataclasses
-from typing import Callable, Dict
+
+# from typing import Callable, Dict
 
 
 @jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
 class ModelState:
-    kernel: Callable
-    params: Dict
+    def __init__(self, kernel, params, **kwargs):
+        self.kernel = kernel
+        self.params = params
+
+        self._register = []
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+            self._register_entry(name)
+
+    def _register_entry(self, entry):
+        self._register.append(entry)
+
+    def __repr__(self):
+        rep = f"{self.__class__.__name__}(kernel={self.kernel}, params={self.params})"
+        if len(self._register) != 0:
+            rep = rep[:-1]
+            for entry in self._register:
+                rep += f", {entry}={getattr(self, entry)}"
+            rep += ")"
+        return rep
 
     @property
     def kernel(self):

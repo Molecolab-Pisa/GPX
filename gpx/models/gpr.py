@@ -114,8 +114,6 @@ def fit(state, x, y):
     return _fit(params=state.params, x=x, y=y, kernel=state.kernel)
 
 
-#
-#
 # @partial(jit, static_argnums=[5, 6])
 # def predict(
 #     params,
@@ -169,8 +167,8 @@ def fit(state, x, y):
 #         return mu, C_nn
 #
 #     return mu
-#
-#
+
+
 # # =============================================================================
 # # Standard Gaussian Process Regression: interface
 # # =============================================================================
