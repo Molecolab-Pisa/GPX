@@ -5,9 +5,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
 
-# from jax.tree_util import tree_map
-# from jax.flatten_util import ravel_pytree
-
 from scipy.optimize import minimize
 
 from .utils import sample
@@ -273,85 +270,55 @@ def optimize(state, x, y):
     return state, optres
 
 
-# #=============================================================================
-# # Standard Gaussian Process Regression: interface
-# # =============================================================================
-#
-#
-# class GaussianProcessRegression:
-#     def __init__(self, kernel, kernel_params, sigma):
-#         self.kernel = kernel
-#         self.kernel_params = tree_map(lambda p: jnp.array(p), kernel_params)
-#         self.sigma = jnp.array(sigma)
-#
-#         self.constrain_parameters = constrain_parameters
-#         self.unconstrain_parameters = unconstrain_parameters
-#
-#         self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
-#         self.params_unconstrained = self.unconstrain_parameters(self.params)
-#
-#     def print(self, **kwargs):
-#         return print_model(self, **kwargs)
-#
-#     def log_marginal_likelihood(self, x, y, return_negative=False):
-#         return log_marginal_likelihood(
-#             self.params, x=x, y=y, kernel=self.kernel, return_negative=return_negative
-#         )
-#
-#     def fit(self, x, y):
-#         x0, unravel_fn = ravel_pytree(self.params_unconstrained)
-#
-#         def loss(xt):
-#             params = unravel_fn(xt)
-#             params = self.constrain_parameters(params)
-#             return log_marginal_likelihood(
-#                 params, x=x, y=y, kernel=self.kernel, return_negative=True
-#             )
-#
-#         grad_loss = jit(grad(loss))
-#
-#         optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
-#
-#         self.params_unconstrained = unravel_fn(optres.x)
-#         self.params = self.constrain_parameters(self.params_unconstrained)
-#
-#         self.optimize_results_ = optres
-#
-#         self.c_, self.y_mean_ = fit(self.params, x=x, y=y, kernel=self.kernel)
-#         self.x_train = x
-#
-#         return self
-#
-#     def predict(self, x, full_covariance=False):
-#         if not hasattr(self, "c_"):
-#             # not trained, return prior values
-#             y_mean = jnp.zeros(x.shape)
-#             if full_covariance:
-#                 cov = self.kernel(x, x, self.params["kernel_params"])
-#                 cov = cov + self.params["sigma"] * jnp.eye(cov.shape[0])
-#                 return y_mean, cov
-#             return y_mean
-#
-#         return predict(
-#             self.params,
-#             x_train=self.x_train,
-#             x=x,
-#             c=self.c_,
-#             y_mean=self.y_mean_,
-#             kernel=self.kernel,
-#             full_covariance=full_covariance,
-#         )
-#
-#     def sample(self, key, x, n_samples=1):
-#         return sample(key, self, x, n_samples=n_samples)
-#
-#
-# # Alias
-# GPR = GaussianProcessRegression
-#
-#
-# # Export
-# __all__ = [
-#     "GaussianProcessRegression",
-#     "GPR",
-# ]
+# =============================================================================
+# Standard Gaussian Process Regression: interface
+# =============================================================================
+
+
+class GaussianProcessRegression:
+    def __init__(self, kernel, kernel_params, sigma):
+        self.kernel = kernel
+        self.kernel_params = kernel_params
+        self.sigma = sigma
+        self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
+
+    def print(self, **kwargs):
+        raise NotImplementedError
+
+    def log_marginal_likelihood(self, x, y, return_negative=False):
+        return log_marginal_likelihood(
+            self.state, x=x, y=y, return_negative=return_negative
+        )
+
+    def fit(self, x, y):
+        self.state, optres = optimize(self.state, x=x, y=y)
+        self.c_ = self.state.c
+        self.y_mean_ = self.state.y_mean
+        self.optimize_results_ = optres
+        self.x_train = x
+        return self
+
+    def predict(self, x, full_covariance=False):
+        if not hasattr(self, "c_"):
+            y_mean = jnp.zeros(x.shape)
+            if full_covariance:
+                sigma = self.state.params["sigma"].value
+                cov = self.kernel(self.state, x, x)
+                cov = cov + sigma * jnp.eye(cov.shape[0])
+                return y_mean, cov
+            return y_mean
+        return predict(self.state, self.x_train, x, full_covariance=full_covariance)
+
+    def sample(self, key, x, n_samples=1, kind="prior"):
+        if kind == "prior":
+            return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
+        elif kind == "posterior":
+            return sample_posterior(key, state=self.state, x=x, n_samples=n_samples)
+        else:
+            raise ValueError(
+                f"kind can be either 'prior' or 'posterior', you provided {kind}"
+            )
+
+
+# Alias
+GPR = GaussianProcessRegression
