@@ -1,19 +1,21 @@
+from typing import Any, Callable, Dict, Optional, Tuple, Self
+
 from functools import partial
 
+from ..parameters.model_state import ModelState
+from ..parameters.parameter import Parameter, parse_param
+from ..utils import sample
+
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
-from jax.tree_util import tree_map
-from jax.flatten_util import ravel_pytree
+from jax._src import prng
 
 from scipy.optimize import minimize
+from scipy.optimize._optimize import OptimizeResult
 
-from ..utils import (
-    constrain_parameters,
-    unconstrain_parameters,
-    split_params,
-    print_model,
-)
+Array = Any
 
 
 # =============================================================================
@@ -21,8 +23,45 @@ from ..utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=[4, 5])
-def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False):
+@partial(jit, static_argnums=[3, 4])
+def _log_marginal_likelihood(
+    params: Dict[str, Parameter],
+    x: Array,
+    y: Array,
+    kernel: Callable,
+    return_negative: Optional[bool] = False,
+) -> Array:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+    x_locs = params["x_locs"].value
+
+    y_mean = jnp.mean(y)
+    y = y - y_mean
+    n = y.shape[0]
+    m = x_locs.shape[0]
+
+    K_mm = kernel(x_locs, x_locs, kernel_params)
+    K_mn = kernel(x_locs, x, kernel_params)
+
+    L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(m), lower=True)
+    G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n)
+    L_n = jsp.linalg.cholesky(C_nn, lower=True)
+    cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
+
+    mll = -0.5 * jnp.sum(jnp.square(cy))
+    mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
+    mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
+
+    if return_negative:
+        return -mll
+
+    return mll
+
+
+def log_marginal_likelihood(
+    state: ModelState, x: Array, y: Array, return_negative: Optional[bool] = False
+) -> Array:
     """
     Computes the log marginal likelihood for Sparse Gaussian Process Regression
     (projected processes).
@@ -50,36 +89,34 @@ def log_marginal_likelihood(params, x, y, x_locs, kernel, return_negative=False)
     mll             : jnp.ndarray, ()
                     Log marginal likelihood
     """
+    return _log_marginal_likelihood(
+        params=state.params,
+        x=x,
+        y=y,
+        kernel=state.kernel,
+        return_negative=return_negative,
+    )
 
-    kernel_params, sigma = split_params(params)
-    x_locs = params["x_locs"] if "x_locs" in params.keys() else x_locs
+
+@partial(jit, static_argnums=[3])
+def _fit(
+    params: Dict[str, Parameter], x: Array, y: Array, kernel: Callable
+) -> Tuple[Array, Array]:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+    x_locs = params["x_locs"].value
 
     y_mean = jnp.mean(y)
     y = y - y_mean
-    n = y.shape[0]
-    m = x_locs.shape[0]
 
-    K_mm = kernel(x_locs, x_locs, kernel_params)
     K_mn = kernel(x_locs, x, kernel_params)
+    C_mm = sigma**2 * kernel(x_locs, x_locs, kernel_params) + jnp.dot(K_mn, K_mn.T)
+    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
 
-    L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(m), lower=True)
-    G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n)
-    L_n = jsp.linalg.cholesky(C_nn, lower=True)
-    cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
-
-    mll = -0.5 * jnp.sum(jnp.square(cy))
-    mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
-    mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
-
-    if return_negative:
-        return -mll
-
-    return mll
+    return c, y_mean
 
 
-@partial(jit, static_argnums=4)
-def fit(params, x, y, x_locs, kernel):
+def fit(state: ModelState, x: Array, y: Array) -> ModelState:
     """
     Fits a Sparse Gaussian Process Regression model (Projected Processes).
     Arguments
@@ -105,22 +142,48 @@ def fit(params, x, y, x_locs, kernel):
     y_mean  : jnp.ndarray, ()
             Target mean
     """
-
-    kernel_params, sigma = split_params(params)
-    x_locs = params["x_locs"] if "x_locs" in params.keys() else x_locs
-
-    y_mean = jnp.mean(y)
-    y = y - y_mean
-
-    K_mn = kernel(x_locs, x, kernel_params)
-    C_mm = sigma**2 * kernel(x_locs, x_locs, kernel_params) + jnp.dot(K_mn, K_mn.T)
-    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
-
-    return c, y_mean
+    c, y_mean = _fit(params=state.params, x=x, y=y, kernel=state.kernel)
+    state = state.update(dict(c=c, y_mean=y_mean, is_fitted=True))
+    return state
 
 
 @partial(jit, static_argnums=[5, 6])
-def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False):
+def _predict(
+    params: Dict[str, Parameter],
+    x: Array,
+    c: Array,
+    y_mean: Array,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+    x_locs = params["x_locs"].value
+
+    K_mn = kernel(x_locs, x, kernel_params)
+    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
+
+    if full_covariance:
+        m = x_locs.shape[0]
+        K_mm = kernel(x_locs, x_locs, kernel_params)
+        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * 1e-10, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+        L_m = jsp.linalg.cholesky(
+            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * 1e-10,
+            lower=True,
+        )
+        H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+        C_nn = (
+            kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn) + jnp.dot(H_mn.T, H_mn)
+        )
+        return mu, C_nn
+
+    return mu
+
+
+def predict(
+    state: ModelState, x: Array, full_covariance: Optional[bool] = False
+) -> Array:
     """
     Predicts using a Sparse Gaussian Process Regression model (Projected Processes).
     Arguments
@@ -150,29 +213,101 @@ def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False):
     C_nn            : jnp.ndarray, (M, M)
                     Posterior covariance
     """
-
-    kernel_params, sigma = split_params(params)
-    x_locs = params["x_locs"] if "x_locs" in params.keys() else x_locs
-
-    K_mn = kernel(x_locs, x, kernel_params)
-    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
-
-    if full_covariance:
-        m = x_locs.shape[0]
-        K_mm = kernel(x_locs, x_locs, kernel_params)
-        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * 1e-10, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        L_m = jsp.linalg.cholesky(
-            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * 1e-10,
-            lower=True,
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Model is not fitted. Run 'fit' to fit the model before prediction."
         )
-        H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        C_nn = (
-            kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn) + jnp.dot(H_mn.T, H_mn)
-        )
-        return mu, C_nn
+    return _predict(
+        params=state.params,
+        x=x,
+        c=state.c,
+        y_mean=state.y_mean,
+        kernel=state.kernel,
+        full_covariance=full_covariance,
+    )
 
-    return mu
+
+def sample_prior(
+    key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
+) -> Array:
+    raise NotImplementedError
+
+
+def sample_posterior(
+    key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
+) -> Array:
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Cannot sample from the posterior if the model is not fitted."
+        )
+    mean, cov = predict(state, x=x, full_covariance=True)
+    cov += 1e-10 * jnp.eye(cov.shape[0])
+
+    return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
+
+
+def init(
+    kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple, x_locs: Tuple
+) -> ModelState:
+    if not callable(kernel):
+        raise RuntimeError(
+            f"kernel must be provided as a callable function, you provided {type(kernel)}"
+        )
+
+    if not isinstance(kernel_params, dict):
+        raise RuntimeError(
+            f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
+        )
+
+    kp = {}
+    for key in kernel_params:
+        param = kernel_params[key]
+        kp[key] = parse_param(param)
+
+    sigma = parse_param(sigma)
+    x_locs = parse_param(x_locs)
+    params = {"kernel_params": kp, "sigma": sigma}
+    opt = dict(is_fitted=False, c=None, y_mean=None)
+
+    return ModelState(kernel, params, **opt)
+
+
+def optimize(
+    state: ModelState, x: Array, y: Array
+) -> Tuple[ModelState, OptimizeResult]:
+    def forward(xt):
+        return jnp.array(
+            [fwd(x) for fwd, x in zip(state.params_forward_transforms, xt)]
+        )
+
+    def backward(xt):
+        return jnp.array(
+            [bwd(x) for bwd, x in zip(state.params_backward_transforms, xt)]
+        )
+
+    x0, unravel_fn = jax.flatten_util.ravel_pytree(state.params)
+    x0 = backward(x0)
+
+    def loss(xt, state):
+        # important: here we first reconstruct the model state with the
+        # updated parameters before feeding it to the loss (lml).
+        # this ensures that gradients are stopped for parameter with
+        # trainable = False.
+        xt = forward(xt)
+        params = unravel_fn(xt)
+        state = state.update(dict(params=params))
+        return log_marginal_likelihood(state, x, y, return_negative=True)
+
+    grad_loss = jit(grad(loss))
+    optres = minimize(loss, x0=x0, args=(state), method="L-BFGS-B", jac=grad_loss)
+
+    xf = forward(optres.x)
+    params = unravel_fn(xf)
+
+    state = state.update(dict(params=params))
+    state = fit(state, x=x, y=y)
+
+    return state, optres
 
 
 # =============================================================================
@@ -181,160 +316,72 @@ def predict(params, x_locs, x, c, y_mean, kernel, full_covariance=False):
 
 
 class SparseGaussianProcessRegression:
-    def __init__(self, x_locs, kernel, kernel_params, sigma, optimize_locs=False):
+    def __init__(
+        self,
+        kernel: Callable,
+        kernel_params: Dict[str, Tuple],
+        sigma: Tuple,
+        x_locs: Tuple,
+    ) -> None:
         self.kernel = kernel
-        self.kernel_params = tree_map(lambda p: jnp.array(p), kernel_params)
-        self.sigma = jnp.array(sigma)
-
-        self.params = {"sigma": self.sigma, "kernel_params": self.kernel_params}
-
-        self.optimize_locs = optimize_locs
-        if optimize_locs:
-            self.params["x_locs"] = jnp.array(x_locs)
-            self.x_locs = self.params["x_locs"]
-
-            self.constrain_parameters = partial(constrain_parameters, ignore=["x_locs"])
-            self.unconstrain_parameters = partial(
-                unconstrain_parameters, ignore=["x_locs"]
-            )
-
-        else:
-            self.x_locs = jnp.array(x_locs)
-            self.constrain_parameters = constrain_parameters
-            self.unconstrain_parameters = unconstrain_parameters
-
-        self.params_unconstrained = self.unconstrain_parameters(
-            self.params, ignore=["x_locs"]
+        self.kernel_params = kernel_params
+        self.sigma = sigma
+        self.x_locs = x_locs
+        self.state = init(
+            kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
         )
 
-    def print(self, **kwargs):
-        return print_model(self, **kwargs)
+    def print(self) -> None:
+        return self.state.print_params()
 
-    def log_marginal_likelihood(self, x, y, return_negative=False):
+    def log_marginal_likelihood(
+        self, x: Array, y: Array, return_negative: Optional[bool] = False
+    ) -> Array:
         return log_marginal_likelihood(
-            self.params,
+            self.state,
             x=x,
             y=y,
-            x_locs=self.x_locs,
-            kernel=self.kernel,
             return_negative=return_negative,
         )
 
-    def fit(self, x, y):
-        x0, unravel_fn = ravel_pytree(self.params_unconstrained)
+    def fit(self, x: Array, y: Array, minimize_lml: Optional[bool] = True) -> Self:
+        if minimize_lml:
+            self.state, optres = optimize(self.state, x=x, y=y)
+            self.optimize_results_ = optres
+        else:
+            self.state = fit(self.state, x=x, y=y)
 
-        def loss(xt):
-            params = unravel_fn(xt)
-            params = self.constrain_parameters(params)
-            return log_marginal_likelihood(
-                params,
-                x=x,
-                y=y,
-                x_locs=self.x_locs,
-                kernel=self.kernel,
-                return_negative=True,
-            )
-
-        grad_loss = grad(loss)
-
-        optres = minimize(loss, x0, method="L-BFGS-B", jac=grad_loss)
-
-        self.params_unconstrained = unravel_fn(optres.x)
-        self.params = self.constrain_parameters(self.params_unconstrained)
-
-        self.optimize_results_ = optres
-
-        self.c_, self.y_mean_ = fit(
-            self.params,
-            x=x,
-            y=y,
-            x_locs=self.x_locs,
-            kernel=self.kernel,
-        )
+        self.c_ = self.state.c
+        self.y_mean_ = self.state.y_mean
+        self.x_locs_ = self.state.x_locs
 
         return self
 
-    def predict(self, x, full_covariance=False):
-        # TODO: add prediction using prior only
-        return predict(
-            self.params,
-            x_locs=self.x_locs,
-            x=x,
-            c=self.c_,
-            y_mean=self.y_mean_,
-            kernel=self.kernel,
-            full_covariance=full_covariance,
-        )
+    def predict(self, x: Array, full_covariance: Optional[bool] = False) -> Array:
+        if not hasattr(self, "c_"):
+            class_name = self.__class__.__name__
+            raise RuntimeError(
+                f"{class_name} is not fitted yet."
+                "Call 'fit' before using this model for prediction."
+            )
+        return predict(self.state, x=x, full_covariance=full_covariance)
+
+    def sample(
+        self,
+        key: prng.PRNGKeyArray,
+        x: Array,
+        n_samples: Optional[int] = 1,
+        kind: Optional[str] = "prior",
+    ):
+        if kind == "prior":
+            return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
+        elif kind == "posterior":
+            return sample_posterior(key, state=self.state, x=x, n_samples=n_samples)
+        else:
+            raise ValueError(
+                f"kind can be either 'prior' or 'posterior', you provided {kind}"
+            )
 
 
 # Alias
 SGPR = SparseGaussianProcessRegression
-
-
-# Export
-__all__ = [
-    "SparseGaussianProcessRegression",
-    "SGPR",
-]
-
-
-# def sgpr_optimize(
-#   params,
-#   x,
-#   y,
-#   x_locs,
-#   kernel,
-#   n_steps=100,
-#   step_size=0.01,
-#   verbose=20,
-# ):
-#   '''
-#   Optimize a Sparse Gaussian Process Regression model (Projected Processes).
-#   Arguments
-#   ---------
-#   params          : dict
-#                   Dictionary of parameters. Should have a 'kernel_params' keyword
-#                   to specify kernel parameters (a dictionary) and a 'sigma' keyword
-#                   to specify the noise. If the input locations should be optimized, they
-#                   must be included in `params` dictionary under the keyword 'x_locs'.
-#                   In this case, `x_locs` is ignored.
-#   x               : jnp.ndarray, (M, F)
-#                   Input matrix of M samples and F features
-#   y               : jnp.ndarray, (N, 1)
-#                   Target matrix with M samples and 1 target
-#   x_locs          : jnp.ndarray, (N, F)
-#                   Input locations (N <= M) with F features
-#   kernel          : callable
-#                   Kernel function
-#   n_steps         : int
-#                   Number of optimization steps
-#   step_size       : float
-#                   Step size / learning rate
-#   verbose         : int
-#                   Frequency for printing the loss (negative log marginal likelihood)
-#   Returns
-#   -------
-#   params          : dict
-#                   Optimized parameters
-#   '''
-#
-#   opt_init, opt_update, get_params = jax_optim.adam(step_size=step_size)
-#   opt_state = opt_init(params)
-#   loss_fn = partial(sgpr_log_marginal_likelihood, kernel=kernel, return_negative=True)
-#
-#   @jit
-#   def train_step(step_i, opt_state, x, y, x_locs):
-#       params = get_params(opt_state)
-#       grads = grad(loss_fn, argnums=0)(params, x, y, x_locs)
-#       return opt_update(step_i, grads, opt_state)
-#
-#   for step_i in range(n_steps):
-#       opt_state = train_step(step_i, opt_state, x, y, x_locs)
-#       if step_i % verbose == 0:
-#           params = get_params(opt_state)
-#           loss = loss_fn(params, x, y, x_locs)
-#           print(" loss : {:.3f}".format(float(loss)))
-#
-#   params = get_params(opt_state)
-#
-#   return params

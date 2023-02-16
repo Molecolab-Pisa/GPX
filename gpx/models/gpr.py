@@ -137,6 +137,27 @@ def _predict(
     kernel: Callable,
     full_covariance: Optional[bool] = False,
 ) -> Array:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+
+    K_mn = kernel(x_train, x, kernel_params)
+    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
+
+    if full_covariance:
+        C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
+            K_mn.shape[0]
+        )
+        L_m = jsp.linalg.cholesky(C_mm, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+        C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
+        return mu, C_nn
+
+    return mu
+
+
+def predict(
+    state: ModelState, x_train: Array, x: Array, full_covariance: Optional[bool] = False
+) -> Array:
     """
     Predict with a Gaussian Process Regression model.
     Arguments
@@ -164,28 +185,6 @@ def _predict(
     C_nn            : jnp.ndarray, (M, M)
                     Predicted covariance
     """
-
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    K_mn = kernel(x_train, x, kernel_params)
-    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
-
-    if full_covariance:
-        C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
-            K_mn.shape[0]
-        )
-        L_m = jsp.linalg.cholesky(C_mm, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
-        return mu, C_nn
-
-    return mu
-
-
-def predict(
-    state: ModelState, x_train: Array, x: Array, full_covariance: Optional[bool] = False
-) -> Array:
     if not state.is_fitted:
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
@@ -226,8 +225,7 @@ def sample_posterior(
         raise RuntimeError(
             "Cannot sample from the posterior if the model is not fitted"
         )
-
-    mean, cov = predict(state, x_train, x, full_covariance=True)
+    mean, cov = predict(state, x_train=x_train, x=x, full_covariance=True)
     cov += 1e-10 * jnp.eye(cov.shape[0])
 
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
@@ -335,10 +333,10 @@ class GaussianProcessRegression:
         if not hasattr(self, "c_"):
             class_name = self.__class__.__name__
             raise RuntimeError(
-                f"This {class_name} is not fitted yet."
+                f"{class_name} is not fitted yet."
                 "Call 'fit' before using this model for prediction."
             )
-        return predict(self.state, self.x_train, x, full_covariance=full_covariance)
+        return predict(self.state, self.x_train, x=x, full_covariance=full_covariance)
 
     def sample(
         self,
