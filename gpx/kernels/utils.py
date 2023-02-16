@@ -1,7 +1,11 @@
+from typing import Any, Callable, Tuple, Union
+
 import functools
 from functools import partial
 import jax.numpy as jnp
 from jax import vmap, jvp, jacrev, jacfwd
+
+Array = Any
 
 
 # =============================================================================
@@ -9,7 +13,7 @@ from jax import vmap, jvp, jacrev, jacfwd
 # =============================================================================
 
 
-def kernelize(kernel_func):
+def kernelize(kernel_func: Callable) -> Callable:
     """Decorator to promote a kernel function operating on single samples to a
        function operating on batches.
 
@@ -41,19 +45,19 @@ def kernelize(kernel_func):
 # =============================================================================
 
 
-def _grad0_kernelize(k):
+def _grad0_kernelize(k: Callable) -> Callable:
     return kernelize(jacrev(k, argnums=0))
 
 
-def _grad1_kernelize(k):
+def _grad1_kernelize(k: Callable) -> Callable:
     return kernelize(jacrev(k, argnums=1))
 
 
-def _grad01_kernelize(k):
+def _grad01_kernelize(k: Callable) -> Callable:
     return kernelize(jacfwd(jacrev(k, argnums=0), argnums=1))
 
 
-def grad0_kernelize(k):
+def grad0_kernelize(k: Callable) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d/d0(k) = cov(w, y) with y = f(x) and w = d/dx(f)(x).
@@ -78,7 +82,7 @@ def grad0_kernelize(k):
     return wrapper
 
 
-def grad1_kernelize(k):
+def grad1_kernelize(k: Callable) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d/d1(k) = cov(y, w) with y = f(x) and w = d/dx(f)(x).
@@ -100,7 +104,7 @@ def grad1_kernelize(k):
     return wrapper
 
 
-def grad01_kernelize(k):
+def grad01_kernelize(k: Callable) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d^2/d0d1(k) = cov(w, w) with y = f(x) and w = d/dx(f)(x).
@@ -120,7 +124,7 @@ def grad01_kernelize(k):
     return wrapper
 
 
-def grad_kernelize(argnums):
+def grad_kernelize(argnums: Union[int, Tuple[int, int]]) -> Callable:
     """Kernelizes the input kernel with respect to the dimension
     specified in argnums.
 
@@ -145,7 +149,7 @@ def grad_kernelize(argnums):
 #          in that case use the kernelize decorators above.
 
 
-def d0_k(k):
+def d0_k(k: Callable) -> Tuple[Callable, Callable]:
     docstr = """
     Derivative kernel with respect to the first argument.
 
@@ -164,7 +168,7 @@ def d0_k(k):
     return wrapper
 
 
-def d1_k(k):
+def d1_k(k: Callable) -> Tuple[Callable, Callable]:
     docstr = """
     Derivative kernel with respect to the seoncd argument.
 
@@ -183,7 +187,7 @@ def d1_k(k):
     return wrapper
 
 
-def d0d1_k(k):
+def d0d1_k(k: Callable) -> Tuple[Callable, Callable, Callable, Callable]:
     docstr = """
     Derivative kernel with respect to the second argument.
 
@@ -204,7 +208,7 @@ def d0d1_k(k):
     return wrapper
 
 
-def grad_kernel(k, argnums):
+def grad_kernel(k: Callable, argnums: Union[int, Tuple[int, int]]):
     """
     Generate a derivative kernel function.
 

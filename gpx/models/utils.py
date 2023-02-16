@@ -1,8 +1,14 @@
+from typing import Any, Optional
 import jax.numpy as jnp
 from jax import random
+from jax._src import prng
+
+Array = Any
 
 
-def sample(key, mean, cov, n_samples=1):
+def sample(
+    key: prng.PRNGKeyArray, mean: Array, cov: Array, n_samples: Optional[int] = 1
+) -> Array:
     if mean.ndim > 1:
         samples = []
         for dim in range(mean.shape[1]):
