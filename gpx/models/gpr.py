@@ -1,15 +1,22 @@
+# from __future__ import annotations
+
+from typing import Any, Callable, Tuple, Dict, Optional, Self
 from functools import partial
 
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
+from jax._src import prng
 
 from scipy.optimize import minimize
+from scipy.optimize._optimize import OptimizeResult
 
 from .utils import sample
 from ..parameters import ModelState
-from ..parameters.parameter import parse_param
+from ..parameters.parameter import parse_param, Parameter
+
+Array = Any
 
 
 # =============================================================================
@@ -18,7 +25,13 @@ from ..parameters.parameter import parse_param
 
 
 @partial(jit, static_argnums=[3, 4])
-def _log_marginal_likelihood(params, x, y, kernel, return_negative=False):
+def _log_marginal_likelihood(
+    params: Dict[str, Parameter],
+    x: Array,
+    y: Array,
+    kernel: Callable,
+    return_negative: Optional[bool] = False,
+) -> Array:
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -40,7 +53,9 @@ def _log_marginal_likelihood(params, x, y, kernel, return_negative=False):
     return mll
 
 
-def log_marginal_likelihood(state, x, y, return_negative=False):
+def log_marginal_likelihood(
+    state: ModelState, x: Array, y: Array, return_negative: Optional[bool] = False
+) -> Array:
     """
     Computes the log marginal likelihood for standard Gaussian Process Regression.
     Arguments
@@ -70,7 +85,9 @@ def log_marginal_likelihood(state, x, y, return_negative=False):
 
 
 @partial(jit, static_argnums=[3])
-def _fit(params, x, y, kernel):
+def _fit(
+    params: Dict[str, Parameter], x: Array, y: Array, kernel: Callable
+) -> Tuple[Array, Array]:
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -83,7 +100,7 @@ def _fit(params, x, y, kernel):
     return c, y_mean
 
 
-def fit(state, x, y):
+def fit(state: ModelState, x: Array, y: Array) -> ModelState:
     """
     Fits a Gaussian Process Regression model.
     Arguments
@@ -112,14 +129,14 @@ def fit(state, x, y):
 
 @partial(jit, static_argnums=[5, 6])
 def _predict(
-    params,
-    x_train,
-    x,
-    c,
-    y_mean,
-    kernel,
-    full_covariance=False,
-):
+    params: Dict[str, Parameter],
+    x_train: Array,
+    x: Array,
+    c: Array,
+    y_mean: Array,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
     """
     Predict with a Gaussian Process Regression model.
     Arguments
@@ -166,7 +183,9 @@ def _predict(
     return mu
 
 
-def predict(state, x_train, x, full_covariance=False):
+def predict(
+    state: ModelState, x_train: Array, x: Array, full_covariance: Optional[bool] = False
+) -> Array:
     if not state.is_fitted:
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
@@ -182,7 +201,9 @@ def predict(state, x_train, x, full_covariance=False):
     )
 
 
-def sample_prior(key, state, x, n_samples=1):
+def sample_prior(
+    key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
+) -> Array:
     kernel = state.kernel
     kernel_params = state.params["kernel_params"]
     sigma = state.params["sigma"].value
@@ -194,7 +215,13 @@ def sample_prior(key, state, x, n_samples=1):
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
-def sample_posterior(key, state, x_train, x, n_samples=1):
+def sample_posterior(
+    key: prng.PRNGKeyArray,
+    state: ModelState,
+    x_train: Array,
+    x: Array,
+    n_samples: Optional[int] = 1,
+) -> Array:
     if not state.is_fitted:
         raise RuntimeError(
             "Cannot sample from the posterior if the model is not fitted"
@@ -206,7 +233,7 @@ def sample_posterior(key, state, x_train, x, n_samples=1):
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
-def init(kernel, kernel_params, sigma):
+def init(kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple) -> ModelState:
     if not callable(kernel):
         raise RuntimeError(
             f"kernel must be provided as a callable function, you provided {type(kernel)}"
@@ -229,7 +256,9 @@ def init(kernel, kernel_params, sigma):
     return ModelState(kernel, params, **opt)
 
 
-def optimize(state, x, y):
+def optimize(
+    state: ModelState, x: Array, y: Array
+) -> Tuple[ModelState, OptimizeResult]:
     def forward(xt):
         return jnp.array(
             [fwd(x) for fwd, x in zip(state.params_forward_transforms, xt)]
@@ -271,21 +300,25 @@ def optimize(state, x, y):
 
 
 class GaussianProcessRegression:
-    def __init__(self, kernel, kernel_params, sigma):
+    def __init__(
+        self, kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple
+    ) -> None:
         self.kernel = kernel
         self.kernel_params = kernel_params
         self.sigma = sigma
         self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
 
-    def print(self, **kwargs):
+    def print(self) -> None:
         return self.state.print_params()
 
-    def log_marginal_likelihood(self, x, y, return_negative=False):
+    def log_marginal_likelihood(
+        self, x: Array, y: Array, return_negative: Optional[bool] = False
+    ) -> Array:
         return log_marginal_likelihood(
             self.state, x=x, y=y, return_negative=return_negative
         )
 
-    def fit(self, x, y, minimize_lml=True):
+    def fit(self, x: Array, y: Array, minimize_lml: Optional[bool] = True) -> Self:
         if minimize_lml:
             self.state, optres = optimize(self.state, x=x, y=y)
             self.optimize_results_ = optres
@@ -298,7 +331,7 @@ class GaussianProcessRegression:
 
         return self
 
-    def predict(self, x, full_covariance=False):
+    def predict(self, x: Array, full_covariance: Optional[bool] = False) -> Array:
         if not hasattr(self, "c_"):
             class_name = self.__class__.__name__
             raise RuntimeError(
@@ -307,7 +340,13 @@ class GaussianProcessRegression:
             )
         return predict(self.state, self.x_train, x, full_covariance=full_covariance)
 
-    def sample(self, key, x, n_samples=1, kind="prior"):
+    def sample(
+        self,
+        key: prng.PRNGKeyArray,
+        x: Array,
+        n_samples: Optional[int] = 1,
+        kind: Optional[str] = "prior",
+    ) -> Array:
         if kind == "prior":
             return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
         elif kind == "posterior":
