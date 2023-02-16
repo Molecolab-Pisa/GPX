@@ -354,7 +354,7 @@ class SparseGaussianProcessRegression:
 
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
-        self.x_locs_ = self.state.x_locs
+        self.x_locs_ = self.state.params["x_locs"].value
 
         return self
 
