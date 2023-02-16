@@ -1,7 +1,7 @@
-from typing import Any, Tuple, Callable
+from typing import Any, Tuple, Callable, Union
 
 import jax
-import dataclasses
+import jax.numpy as jnp
 
 Array = Any
 
@@ -13,12 +13,22 @@ Array = Any
 
 
 @jax.tree_util.register_pytree_node_class
-@dataclasses.dataclass
 class Parameter:
-    value: float
-    trainable: bool
-    forward_transform: Callable
-    backward_transform: Callable
+    def __init__(
+        self,
+        value: Union[float, Array],
+        trainable: bool,
+        forward_transform: Callable,
+        backward_transform: Callable,
+    ) -> None:
+        self.value = jnp.array(value)
+        self.trainable = trainable
+        self.forward_transform = forward_transform
+        self.backward_transform = backward_transform
+
+    def __repr__(self) -> str:
+        name = self.__class__.__name__
+        return f"{name}(value={self.value}, trainable={self.trainable}, forward_transform={self.forward_transform}, backward_transform={self.backward_transform})"
 
     def tree_flatten(self) -> Tuple[Array, Any]:
         children = (self.value,)
