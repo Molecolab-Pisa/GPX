@@ -35,6 +35,11 @@ def inverse_softplus(x: Array) -> Array:
     return jnp.log(jnp.expm1(x))
 
 
+@jit
+def identity(x: Array) -> Array:
+    return x
+
+
 # =============================================================================
 # Parameters Handling
 # =============================================================================
