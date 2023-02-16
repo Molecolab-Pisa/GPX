@@ -1,13 +1,14 @@
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import jit  # , grad
+from jax import grad, jit
 
 # from jax.tree_util import tree_map
 # from jax.flatten_util import ravel_pytree
 
-# from scipy.optimize import minimize
+from scipy.optimize import minimize
 
 from .utils import sample
 from ..parameters import ModelState
@@ -237,6 +238,39 @@ def init(kernel, kernel_params, sigma):
     opt = dict(is_fitted=False, c=None, y_mean=None)
 
     return ModelState(kernel, params, **opt)
+
+
+def optimize(state, x, y):
+    def forward(xt):
+        return jnp.array(
+            [fwd(x) for fwd, x in zip(state.params_forward_transforms, xt)]
+        )
+
+    def backward(xt):
+        return jnp.array(
+            [bwd(x) for bwd, x in zip(state.params_backward_transforms, xt)]
+        )
+
+    kernel = state.kernel
+
+    x0, unravel_fn = jax.flatten_util.ravel_pytree(state.params)
+    x0 = backward(x0)
+
+    def loss(xt):
+        xt = forward(xt)
+        params = unravel_fn(xt)
+        return _log_marginal_likelihood(params, x, y, kernel, return_negative=True)
+
+    grad_loss = jit(grad(loss))
+    optres = minimize(loss, x0=x0, method="L-BFGS-B", jac=grad_loss)
+
+    xf = forward(optres.x)
+    params = unravel_fn(xf)
+
+    state = state.update(dict(params=params))
+    state = fit(state, x=x, y=y)
+
+    return state, optres
 
 
 # #=============================================================================
