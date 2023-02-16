@@ -7,10 +7,10 @@ from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, parse_param
 from ..utils import sample
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import grad, jit
+from jax.flatten_util import ravel_pytree
 from jax._src import prng
 
 from scipy.optimize import minimize
@@ -286,7 +286,7 @@ def optimize(
             [bwd(x) for bwd, x in zip(state.params_backward_transforms, xt)]
         )
 
-    x0, unravel_fn = jax.flatten_util.ravel_pytree(state.params)
+    x0, unravel_fn = ravel_pytree(state.params)
     x0 = backward(x0)
 
     def loss(xt, state):
