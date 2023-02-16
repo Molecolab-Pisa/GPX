@@ -1,4 +1,5 @@
-from typing import Any, Callable, Dict, Optional, Tuple, Self
+from typing import Any, Callable, Dict, Optional, Tuple
+from typing_extensions import Self
 
 from functools import partial
 

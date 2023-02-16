@@ -1,6 +1,7 @@
 # from __future__ import annotations
 
-from typing import Any, Callable, Tuple, Dict, Optional, Self
+from typing import Any, Callable, Tuple, Dict, Optional
+from typing_extensions import Self
 from functools import partial
 
 import jax

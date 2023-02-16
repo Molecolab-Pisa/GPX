@@ -77,18 +77,18 @@ class ModelState:
     def params_backward_transforms(self) -> List[Callable]:
         return self._params_backward_transforms(self.params)
 
-    def _params_value(self, params: Dict[str, Parameter]) -> Array[Array]:
+    def _params_value(self, params: Dict[str, Parameter]) -> Array:
         return jnp.array([p.value for p in _recursive_traverse_dict(params)])
 
     @property
-    def params_value(self) -> Array[Array]:
+    def params_value(self) -> Array:
         return self._params_value(self.params)
 
-    def _params_trainable(self, params: Dict[str, Parameter]) -> Array[bool]:
+    def _params_trainable(self, params: Dict[str, Parameter]) -> Array:
         return jnp.array([p.trainable for p in _recursive_traverse_dict(params)])
 
     @property
-    def params_trainable(self) -> Array[bool]:
+    def params_trainable(self) -> Array:
         return self._params_trainable(self.params)
 
     def tree_flatten(self) -> Tuple[Array, Any]:
