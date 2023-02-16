@@ -1,10 +1,5 @@
-from tabulate import tabulate
-
-import numpy as np
-
 import jax.numpy as jnp
 from jax import jit
-from jax.tree_util import tree_map
 
 
 # =============================================================================
@@ -41,31 +36,31 @@ def inverse_softplus(x):
 # =============================================================================
 
 
-def split_params(params):
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"]
-    return kernel_params, sigma
-
-
-def transform_parameters(params, transform, ignore=None):
-    if ignore is not None:
-        tmp = params.copy()
-        tmp = {key: value for key, value in tmp.items() if key in ignore}
-        params = {key: value for key, value in params.items() if key not in ignore}
-        transformed = tree_map(lambda p: transform(p), params)
-        for key in tmp:
-            transformed[key] = tmp[key]
-    else:
-        transformed = tree_map(lambda p: transform(p), params)
-    return transformed
-
-
-def constrain_parameters(params, transform=softplus, ignore=None):
-    return transform_parameters(params, transform=transform, ignore=ignore)
-
-
-def unconstrain_parameters(params, transform=inverse_softplus, ignore=None):
-    return transform_parameters(params, transform=transform, ignore=ignore)
+# def split_params(params):
+#    kernel_params = params["kernel_params"]
+#    sigma = params["sigma"]
+#    return kernel_params, sigma
+#
+#
+# def transform_parameters(params, transform, ignore=None):
+#    if ignore is not None:
+#        tmp = params.copy()
+#        tmp = {key: value for key, value in tmp.items() if key in ignore}
+#        params = {key: value for key, value in params.items() if key not in ignore}
+#        transformed = tree_map(lambda p: transform(p), params)
+#        for key in tmp:
+#            transformed[key] = tmp[key]
+#    else:
+#        transformed = tree_map(lambda p: transform(p), params)
+#    return transformed
+#
+#
+# def constrain_parameters(params, transform=softplus, ignore=None):
+#    return transform_parameters(params, transform=transform, ignore=ignore)
+#
+#
+# def unconstrain_parameters(params, transform=inverse_softplus, ignore=None):
+#    return transform_parameters(params, transform=transform, ignore=ignore)
 
 
 # def flatten_arrays(arrays):
@@ -78,27 +73,3 @@ def unconstrain_parameters(params, transform=inverse_softplus, ignore=None):
 #    if len(arrays) != len(shapes):
 #        raise RuntimeError('Incompatible number of shapes/arrays')
 #    return [a.reshape(s) for a, s in zip(arrays, shapes)]
-
-
-# =============================================================================
-# Printing
-# =============================================================================
-
-
-def print_model(model, tablefmt="simple_grid"):
-    params = model.params.copy()
-    kernel_params = params.pop("kernel_params")
-
-    headers = ["name", "type", "dtype", "shape", "value"]
-
-    def string_repr(v):
-        return np.array2string(v, edgeitems=1, threshold=1)
-
-    def get_info(v):
-        return (type(v), v.dtype, v.shape, string_repr(v))
-
-    fields = [["kernel " + k] + list(get_info(v)) for k, v in kernel_params.items()]
-    fields += [[k] + list(get_info(v)) for k, v in params.items()]
-
-    with np.printoptions(edgeitems=0):
-        print(tabulate(fields, headers=headers, tablefmt=tablefmt))

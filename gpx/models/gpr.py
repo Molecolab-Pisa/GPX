@@ -278,7 +278,7 @@ class GaussianProcessRegression:
         self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
 
     def print(self, **kwargs):
-        raise NotImplementedError
+        return self.state.print_params()
 
     def log_marginal_likelihood(self, x, y, return_negative=False):
         return log_marginal_likelihood(

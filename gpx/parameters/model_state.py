@@ -3,6 +3,9 @@ from .utils import _recursive_traverse_dict
 import jax
 import jax.numpy as jnp
 
+import numpy as np
+from tabulate import tabulate
+
 
 @jax.tree_util.register_pytree_node_class
 class ModelState:
@@ -111,3 +114,23 @@ class ModelState:
         for key, val in update_dict.items():
             opt[key] = val
         return self.__class__(kernel, params, **opt)
+
+    def print_params(self, tablefmt="simple_grid"):
+        params = self.params.copy()
+        kernel_params = params.pop("kernel_params")
+
+        headers = ["name", "type", "dtype", "shape", "value"]
+
+        def string_repr(v):
+            return np.array2string(v, edgeitems=1, threshold=1)
+
+        def get_info(v):
+            return (type(v), v.dtype, v.shape, string_repr(v))
+
+        fields = [
+            ["kernel " + k] + list(get_info(p.value)) for k, p in kernel_params.items()
+        ]
+        fields += [[k] + list(get_info(p.value)) for k, p in params.items()]
+
+        with np.printoptions(edgeitems=0):
+            print(tabulate(fields, headers=headers, tablefmt=tablefmt))
