@@ -207,14 +207,11 @@ def sample_posterior(key, state, x_train, x, n_samples=1):
 
 
 def init(kernel, kernel_params, sigma):
-
-    # validate kernel argument
     if not callable(kernel):
         raise RuntimeError(
             f"kernel must be provided as a callable function, you provided {type(kernel)}"
         )
 
-    # validate kernel_params argument
     if not isinstance(kernel_params, dict):
         raise RuntimeError(
             f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
@@ -225,13 +222,8 @@ def init(kernel, kernel_params, sigma):
         param = kernel_params[key]
         kp[key] = parse_param(param)
 
-    # validate sigma argument
     sigma = parse_param(sigma)
-
-    # merge kernel parameters and sigma
     params = {"kernel_params": kp, "sigma": sigma}
-
-    # additional fields
     opt = dict(is_fitted=False, c=None, y_mean=None)
 
     return ModelState(kernel, params, **opt)
@@ -290,23 +282,26 @@ class GaussianProcessRegression:
             self.state, x=x, y=y, return_negative=return_negative
         )
 
-    def fit(self, x, y):
-        self.state, optres = optimize(self.state, x=x, y=y)
+    def fit(self, x, y, optimize=True):
+        if optimize:
+            self.state, optres = optimize(self.state, x=x, y=y)
+            self.optimize_results_ = optres
+        else:
+            self.state = fit(self.state, x=x, y=y)
+
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
-        self.optimize_results_ = optres
         self.x_train = x
+
         return self
 
     def predict(self, x, full_covariance=False):
         if not hasattr(self, "c_"):
-            y_mean = jnp.zeros(x.shape)
-            if full_covariance:
-                sigma = self.state.params["sigma"].value
-                cov = self.kernel(self.state, x, x)
-                cov = cov + sigma * jnp.eye(cov.shape[0])
-                return y_mean, cov
-            return y_mean
+            class_name = self.__class__.__name__
+            raise RuntimeError(
+                f"This {class_name} is not fitted yet."
+                "Call 'fit' before using this model for prediction."
+            )
         return predict(self.state, self.x_train, x, full_covariance=full_covariance)
 
     def sample(self, key, x, n_samples=1, kind="prior"):
