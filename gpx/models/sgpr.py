@@ -148,7 +148,7 @@ def fit(state: ModelState, x: Array, y: Array) -> ModelState:
     return state
 
 
-@partial(jit, static_argnums=[5, 6])
+@partial(jit, static_argnums=[4, 5])
 def _predict(
     params: Dict[str, Parameter],
     x: Array,
