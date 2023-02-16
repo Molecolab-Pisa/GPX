@@ -240,18 +240,21 @@ def optimize(state, x, y):
             [bwd(x) for bwd, x in zip(state.params_backward_transforms, xt)]
         )
 
-    kernel = state.kernel
-
     x0, unravel_fn = jax.flatten_util.ravel_pytree(state.params)
     x0 = backward(x0)
 
-    def loss(xt):
+    def loss(xt, state):
+        # important: here we first reconstruct the model state with the
+        # updated parameters before feeding it to the loss (lml).
+        # this ensures that gradients are stopped for parameter with
+        # trainable = False.
         xt = forward(xt)
         params = unravel_fn(xt)
-        return _log_marginal_likelihood(params, x, y, kernel, return_negative=True)
+        state = state.update(dict(params=params))
+        return log_marginal_likelihood(state, x, y, return_negative=True)
 
     grad_loss = jit(grad(loss))
-    optres = minimize(loss, x0=x0, method="L-BFGS-B", jac=grad_loss)
+    optres = minimize(loss, x0=x0, args=(state), method="L-BFGS-B", jac=grad_loss)
 
     xf = forward(optres.x)
     params = unravel_fn(xf)
@@ -282,8 +285,8 @@ class GaussianProcessRegression:
             self.state, x=x, y=y, return_negative=return_negative
         )
 
-    def fit(self, x, y, optimize=True):
-        if optimize:
+    def fit(self, x, y, minimize_lml=True):
+        if minimize_lml:
             self.state, optres = optimize(self.state, x=x, y=y)
             self.optimize_results_ = optres
         else:
