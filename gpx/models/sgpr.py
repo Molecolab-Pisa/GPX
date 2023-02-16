@@ -267,7 +267,7 @@ def init(
 
     sigma = parse_param(sigma)
     x_locs = parse_param(x_locs)
-    params = {"kernel_params": kp, "sigma": sigma}
+    params = {"kernel_params": kp, "sigma": sigma, "x_locs": x_locs}
     opt = dict(is_fitted=False, c=None, y_mean=None)
 
     return ModelState(kernel, params, **opt)

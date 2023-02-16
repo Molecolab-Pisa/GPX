@@ -4,7 +4,6 @@ from .utils import _recursive_traverse_dict
 from .parameter import Parameter
 
 import jax
-import jax.numpy as jnp
 
 import numpy as np
 from tabulate import tabulate
@@ -54,7 +53,10 @@ class ModelState:
     def params(self, p: Dict[str, Parameter]) -> None:
         trainable = self._params_trainable(p)
         values = self._params_value(p)
-        values = jnp.where(trainable, values, jax.lax.stop_gradient(values))
+        # values = jnp.where(trainable, values, jax.lax.stop_gradient(values))
+        values = [
+            v if t else jax.lax.stop_gradient(v) for t, v in zip(trainable, values)
+        ]
         p_structure = jax.tree_util.tree_structure(p)
         self._params = jax.tree_util.tree_unflatten(p_structure, values)
         self._params_structure = p_structure
@@ -77,26 +79,30 @@ class ModelState:
     def params_backward_transforms(self) -> List[Callable]:
         return self._params_backward_transforms(self.params)
 
-    def _params_value(self, params: Dict[str, Parameter]) -> Array:
-        return jnp.array([p.value for p in _recursive_traverse_dict(params)])
+    def _params_value(self, params: Dict[str, Parameter]) -> List[Array]:
+        return [p.value for p in _recursive_traverse_dict(params)]
 
     @property
-    def params_value(self) -> Array:
+    def params_value(self) -> List[Array]:
         return self._params_value(self.params)
 
-    def _params_trainable(self, params: Dict[str, Parameter]) -> Array:
-        return jnp.array([p.trainable for p in _recursive_traverse_dict(params)])
+    def _params_trainable(self, params: Dict[str, Parameter]) -> List[Array]:
+        return [p.trainable for p in _recursive_traverse_dict(params)]
 
     @property
-    def params_trainable(self) -> Array:
+    def params_trainable(self) -> List[Array]:
         return self._params_trainable(self.params)
 
     def tree_flatten(self) -> Tuple[Array, Any]:
         params_value = self.params_value
         params_trainable = self.params_trainable
-        params_value = jnp.where(
-            params_trainable, params_value, jax.lax.stop_gradient(params_value)
-        )
+        params_value = [
+            v if t else jax.lax.stop_gradient(v)
+            for t, v in zip(params_trainable, params_value)
+        ]
+        # params_value = jnp.where(
+        #    params_trainable, params_value, jax.lax.stop_gradient(params_value)
+        # )
 
         opt = {}
         if len(self._register) != 0:
