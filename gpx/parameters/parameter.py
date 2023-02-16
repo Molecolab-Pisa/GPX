@@ -1,6 +1,9 @@
+from typing import Any, Tuple, Callable
+
 import jax
 import dataclasses
-from typing import Callable
+
+Array = Any
 
 
 # currently not registrable as a PyTree, as
@@ -17,17 +20,17 @@ class Parameter:
     forward_transform: Callable
     backward_transform: Callable
 
-    def tree_flatten(self):
+    def tree_flatten(self) -> Tuple[Array, Any]:
         children = (self.value,)
         aux_data = (self.trainable, self.forward_transform, self.backward_transform)
         return children, aux_data
 
     @classmethod
-    def tree_unflatten(cls, aux_data, children):
+    def tree_unflatten(cls, aux_data: Any, children: Array) -> "Parameter":
         return cls(*children, *aux_data)
 
 
-def parse_param(param):
+def parse_param(param: Tuple[Array, bool, Callable, Callable]) -> Parameter:
     errmsg = "Provide each parameter as a 4-tuple (value: float|jax.Array, trainable: bool, forward: callable, backward: callable)"
     try:
         value, trainable, forward, backward = param
