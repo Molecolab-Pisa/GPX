@@ -5,17 +5,13 @@ from functools import partial
 
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, parse_param
+from ..optimize import scipy_minimize
 from .utils import sample
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import grad, jit
-from jax.flatten_util import ravel_pytree
+from jax import jit
 from jax._src import prng
-
-from scipy.optimize import minimize
-from scipy.optimize._optimize import OptimizeResult
 
 Array = Any
 
@@ -274,43 +270,6 @@ def init(
     return ModelState(kernel, params, **opt)
 
 
-def optimize(
-    state: ModelState, x: Array, y: Array
-) -> Tuple[ModelState, OptimizeResult]:
-    def forward(xt):
-        return [fwd(x) for fwd, x in zip(state.params_forward_transforms, xt)]
-
-    def backward(xt):
-        return [bwd(x) for bwd, x in zip(state.params_backward_transforms, xt)]
-
-    x0, treedef = jax.tree_util.tree_flatten(state.params)
-    x0 = backward(x0)
-    x0, unravel_fn = ravel_pytree(x0)
-
-    def loss(xt, state):
-        # important: here we first reconstruct the model state with the
-        # updated parameters before feeding it to the loss (lml).
-        # this ensures that gradients are stopped for parameter with
-        # trainable = False.
-        xt = unravel_fn(xt)
-        xt = forward(xt)
-        params = jax.tree_util.tree_unflatten(treedef, xt)
-        state = state.update(dict(params=params))
-        return log_marginal_likelihood(state, x, y, return_negative=True)
-
-    grad_loss = jit(grad(loss))
-    optres = minimize(loss, x0=x0, args=(state), method="L-BFGS-B", jac=grad_loss)
-
-    xf = unravel_fn(optres.x)
-    xf = forward(xf)
-    params = jax.tree_util.tree_unflatten(treedef, xf)
-
-    state = state.update(dict(params=params))
-    state = fit(state, x=x, y=y)
-
-    return state, optres
-
-
 # =============================================================================
 # Sparse Gaussian Process Regression: interface
 # =============================================================================
@@ -347,10 +306,11 @@ class SparseGaussianProcessRegression:
 
     def fit(self, x: Array, y: Array, minimize_lml: Optional[bool] = True) -> Self:
         if minimize_lml:
-            self.state, optres = optimize(self.state, x=x, y=y)
+            loss_fn = partial(log_marginal_likelihood, return_negative=True)
+            self.state, optres = scipy_minimize(self.state, x=x, y=y, loss_fn=loss_fn)
             self.optimize_results_ = optres
-        else:
-            self.state = fit(self.state, x=x, y=y)
+
+        self.state = fit(self.state, x=x, y=y)
 
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
