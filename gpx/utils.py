@@ -1,5 +1,9 @@
+from typing import Any
+
 import jax.numpy as jnp
 from jax import jit
+
+Array = Any
 
 
 # =============================================================================
@@ -8,7 +12,7 @@ from jax import jit
 
 
 @jit
-def squared_distances(x1, x2):
+def squared_distances(x1: Array, x2: Array) -> Array:
     jitter = 1e-12
     x1s = jnp.sum(jnp.square(x1), axis=-1)
     x2s = jnp.sum(jnp.square(x2), axis=-1)
@@ -22,12 +26,12 @@ def squared_distances(x1, x2):
 
 
 @jit
-def softplus(x):
+def softplus(x: Array) -> Array:
     return jnp.logaddexp(x, 0.0)
 
 
 @jit
-def inverse_softplus(x):
+def inverse_softplus(x: Array) -> Array:
     return jnp.log(jnp.expm1(x))
 
 
