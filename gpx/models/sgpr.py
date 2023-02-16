@@ -5,7 +5,7 @@ from functools import partial
 
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, parse_param
-from ..utils import sample
+from .utils import sample
 
 import jax.numpy as jnp
 import jax.scipy as jsp
