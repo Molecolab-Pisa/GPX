@@ -6,12 +6,6 @@ import jax.numpy as jnp
 Array = Any
 
 
-# currently not registrable as a PyTree, as
-# we want to treat a Parameter as a leaf when
-# flattening a dictioanry of Parameter instances
-# in order to get its auxiliary data
-
-
 @jax.tree_util.register_pytree_node_class
 class Parameter:
     def __init__(
