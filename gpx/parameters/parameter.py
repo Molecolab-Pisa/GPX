@@ -25,3 +25,30 @@ class Parameter:
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         return cls(*children, *aux_data)
+
+
+def parse_param(param):
+    errmsg = "Provide each parameter as a 4-tuple (value: float|jax.Array, trainable: bool, forward: callable, backward: callable)"
+    try:
+        value, trainable, forward, backward = param
+    except TypeError as e:
+        raise TypeError(f"{e}. {errmsg}") from None
+
+    if not isinstance(value, float) and not isinstance(value, jax.Array):
+        raise RuntimeError(f"You provided value as {type(value)}. {errmsg}")
+
+    if not isinstance(trainable, bool):
+        raise RuntimeError(f"You provided trainable as {type(trainable)}. {errmsg}")
+
+    if not callable(forward):
+        raise RuntimeError(f"You provided forward as {type(forward)}. {errmsg}")
+
+    if not callable(backward):
+        raise RuntimeError(f"You provided backward as {type(backward)}. {errmsg}")
+
+    return Parameter(
+        value=value,
+        trainable=trainable,
+        forward_transform=forward,
+        backward_transform=backward,
+    )

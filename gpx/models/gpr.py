@@ -9,13 +9,9 @@ from jax import jit  # , grad
 
 # from scipy.optimize import minimize
 
-# from .utils import sample
-# from ..utils import (
-#     constrain_parameters,
-#     unconstrain_parameters,
-#     split_params,
-#     print_model,
-# )
+from .utils import sample
+from ..parameters import ModelState
+from ..parameters.parameter import parse_param
 
 
 # =============================================================================
@@ -112,7 +108,7 @@ def fit(state, x, y):
             Target mean
     """
     c, y_mean = _fit(params=state.params, x=x, y=y, kernel=state.kernel)
-    state = state.update_state(dict(c=c, y_mean=y_mean, is_fitted=True))
+    state = state.update(dict(c=c, y_mean=y_mean, is_fitted=True))
     return state
 
 
@@ -188,7 +184,62 @@ def predict(state, x_train, x, full_covariance=False):
     )
 
 
-# # =============================================================================
+def sample_prior(key, state, x, n_samples=1):
+    kernel = state.kernel
+    kernel_params = state.params["kernel_params"]
+    sigma = state.params["sigma"].value
+
+    mean = jnp.zeros(x.shape)
+    cov = kernel(x, x, kernel_params)
+    cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
+
+    return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
+
+
+def sample_posterior(key, state, x_train, x, n_samples=1):
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Cannot sample from the posterior if the model is not fitted"
+        )
+
+    mean, cov = predict(state, x_train, x, full_covariance=True)
+    cov += 1e-10 * jnp.eye(cov.shape[0])
+
+    return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
+
+
+def init(kernel, kernel_params, sigma):
+
+    # validate kernel argument
+    if not callable(kernel):
+        raise RuntimeError(
+            f"kernel must be provided as a callable function, you provided {type(kernel)}"
+        )
+
+    # validate kernel_params argument
+    if not isinstance(kernel_params, dict):
+        raise RuntimeError(
+            f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
+        )
+
+    kp = {}
+    for key in kernel_params:
+        param = kernel_params[key]
+        kp[key] = parse_param(param)
+
+    # validate sigma argument
+    sigma = parse_param(sigma)
+
+    # merge kernel parameters and sigma
+    params = {"kernel_params": kp, "sigma": sigma}
+
+    # additional fields
+    opt = dict(is_fitted=False, c=None, y_mean=None)
+
+    return ModelState(kernel, params, **opt)
+
+
+# #=============================================================================
 # # Standard Gaussian Process Regression: interface
 # # =============================================================================
 #
