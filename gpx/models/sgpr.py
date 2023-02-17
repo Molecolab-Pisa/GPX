@@ -228,7 +228,16 @@ def predict(
 def sample_prior(
     key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
 ) -> Array:
-    raise NotImplementedError
+    # not 100% sure that it's the same as the full GP though
+    kernel = state.kernel
+    kernel_params = state.params["kernel_params"]
+    sigma = state.params["sigma"].value
+
+    mean = jnp.zeros(x.shape)
+    cov = kernel(x, x, kernel_params)
+    cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
+
+    return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
 def sample_posterior(
