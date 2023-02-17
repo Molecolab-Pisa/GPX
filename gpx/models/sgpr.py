@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Callable, Dict, Optional, Tuple
 from typing_extensions import Self
 
@@ -29,6 +31,13 @@ def _log_marginal_likelihood(
     kernel: Callable,
     return_negative: Optional[bool] = False,
 ) -> Array:
+    """log marginal likelihood for SGPR (projected processes)
+
+    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+
+    H = K_nm (K_mm)⁻¹ K_mn
+
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
     x_locs = params["x_locs"].value
@@ -60,32 +69,19 @@ def _log_marginal_likelihood(
 def log_marginal_likelihood(
     state: ModelState, x: Array, y: Array, return_negative: Optional[bool] = False
 ) -> Array:
-    """
-    Computes the log marginal likelihood for Sparse Gaussian Process Regression
-    (projected processes).
-    Arguments
-    ---------
-    params          : dict
-                    Dictionary of parameters. Should have a 'kernel_params' keyword
-                    to specify kernel parameters (a dictionary) and a 'sigma' keyword
-                    to specify the noise.
-                    If the input locations should be optimized, they
-                    must be included in `params` dictionary under the keyword 'x_locs'.
-                    In this case, `x_locs` is ignored.
-    x               : jnp.ndarray, (M, F)
-                    Input matrix of M samples and F features
-    y               : jnp.ndarray, (M, 1)
-                    Target matrix of M samples and 1 target
-    x_locs          : jnp.ndarray, (N, F)
-                    Input locations (N <= M) with F features
-    kernel          : callable
-                    Kernel function
-    return_negative : bool
-                    Whether to return the negative marginal log likelihood
-    Returns
-    -------
-    mll             : jnp.ndarray, ()
-                    Log marginal likelihood
+    """log marginal likelihood for SGPR (projected processes)
+
+        lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+
+        H = K_nm (K_mm)⁻¹ K_mn
+
+    Args:
+        state: model state
+        x: observations
+        y: labels
+        return_negative: whether to return the negative of the lml
+    Returns:
+        lml: log marginal likelihood
     """
     return _log_marginal_likelihood(
         params=state.params,
@@ -100,6 +96,13 @@ def log_marginal_likelihood(
 def _fit(
     params: Dict[str, Parameter], x: Array, y: Array, kernel: Callable
 ) -> Tuple[Array, Array]:
+    """fits a SGPR (projected processes)
+
+    y_mean = (1/n) Σ_i y_i
+
+    c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
     x_locs = params["x_locs"].value
@@ -115,30 +118,18 @@ def _fit(
 
 
 def fit(state: ModelState, x: Array, y: Array) -> ModelState:
-    """
-    Fits a Sparse Gaussian Process Regression model (Projected Processes).
-    Arguments
-    ---------
-    params          : dict
-                    Dictionary of parameters. Should have a 'kernel_params' keyword
-                    to specify kernel parameters (a dictionary) and a 'sigma' keyword
-                    to specify the noise. If the input locations should be optimized, they
-                    must be included in `params` dictionary under the keyword 'x_locs'.
-                    In this case, `x_locs` is ignored.
-    x               : jnp.ndarray, (M, F)
-                    Input matrix of M samples and F features
-    y               : jnp.ndarray, (M, 1)
-                    Target matrix of M samples and 1 target
-    x_locs          : jnp.ndarray, (N, F)
-                    Input locations (N <= M) with F features
-    kernel          : callable
-                    Kernel function
-    Returns
-    -------
-    c       : jnp.ndarray, (M, 1)
-            Dual coefficients
-    y_mean  : jnp.ndarray, ()
-            Target mean
+    """fits a SGPR (projected processes)
+
+        y_mean = (1/n) Σ_i y_i
+
+        c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+    Args:
+        state: model state
+        x: observations
+        y: labels
+    Returns:
+        state: fitted model state
     """
     c, y_mean = _fit(params=state.params, x=x, y=y, kernel=state.kernel)
     state = state.update(dict(c=c, y_mean=y_mean, is_fitted=True))
@@ -154,6 +145,13 @@ def _predict(
     kernel: Callable,
     full_covariance: Optional[bool] = False,
 ) -> Array:
+    """predicts with a SGPR (projected processes)
+
+    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
     x_locs = params["x_locs"].value
@@ -172,7 +170,9 @@ def _predict(
         )
         H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
         C_nn = (
-            kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn) + jnp.dot(H_mn.T, H_mn)
+            kernel(x, x, kernel_params)
+            - jnp.dot(G_mn.T, G_mn)
+            + sigma**2 * jnp.dot(H_mn.T, H_mn)
         )
         return mu, C_nn
 
@@ -182,34 +182,19 @@ def _predict(
 def predict(
     state: ModelState, x: Array, full_covariance: Optional[bool] = False
 ) -> Array:
-    """
-    Predicts using a Sparse Gaussian Process Regression model (Projected Processes).
-    Arguments
-    ---------
-    params          : dict
-                    Dictionary of parameters. Should have a 'kernel_params' keyword
-                    to specify kernel parameters (a dictionary) and a 'sigma' keyword
-                    to specify the noise. If the input locations should be optimized, they
-                    must be included in `params` dictionary under the keyword 'x_locs'.
-                    In this case, `x_locs` is ignored.
-    x_locs          : jnp.ndarray, (N, F)
-                    Input locations (N <= M) with F features
-    x               : jnp.ndarray, (M, F)
-                    Input matrix of M samples and F features
-    c               : jnp.ndarray, (N, 1)
-                    Dual coefficients
-    y_mean          : jnp.ndarray, ()
-                    Target mean
-    kernel          : callable
-                    Kernel function
-    full_covariance : bool
-                    Whether to return the full posterior covariance
-    Returns
-    -------
-    mu              : jnp.ndarray, (M, 1)
-                    Posterior mean
-    C_nn            : jnp.ndarray, (M, M)
-                    Posterior covariance
+    """predicts with a SGPR (projected processes)
+
+        μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+        C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+
+    Args:
+        state: model state
+        x: observations
+        full_covariance: whether to return the covariance matrix too
+    Returns:
+        μ: predicted mean
+        C_nn (optional): predicted covariance
     """
     if not state.is_fitted:
         raise RuntimeError(
@@ -228,6 +213,16 @@ def predict(
 def sample_prior(
     key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
 ) -> Array:
+    """samples from the prior of a SGPR (projected processes)
+
+    Args:
+        key: JAX PRNGKey
+        state: model state
+        x: observations
+        n_samples: number of samples to draw
+    Returns:
+        samples: samples from the prior distribution
+    """
     # not 100% sure that it's the same as the full GP though
     kernel = state.kernel
     kernel_params = state.params["kernel_params"]
@@ -243,6 +238,16 @@ def sample_prior(
 def sample_posterior(
     key: prng.PRNGKeyArray, state: ModelState, x: Array, n_samples: Optional[int] = 1
 ) -> Array:
+    """samples from a posterior of the SGPR (projected processes)
+
+    Args:
+        key: JAX PRNGKey
+        state: model state
+        x: observations
+        n_samples: number of samples to draw
+    Returns:
+        samplse: samples from the posterior distribution
+    """
     if not state.is_fitted:
         raise RuntimeError(
             "Cannot sample from the posterior if the model is not fitted."
@@ -256,6 +261,16 @@ def sample_posterior(
 def init(
     kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple, x_locs: Tuple
 ) -> ModelState:
+    """initializes the model state of a SGPR (projected processes)
+
+    Args:
+        kernel: kernel function
+        kernel_params: kernel parameters
+        sigma: standard deviation of the gaussian noise
+        x_locs: landmark points (support points) of the SGPR
+    Returns:
+        state: model state
+    """
     if not callable(kernel):
         raise RuntimeError(
             f"kernel must be provided as a callable function, you provided {type(kernel)}"
@@ -292,6 +307,13 @@ class SparseGaussianProcessRegression:
         sigma: Tuple,
         x_locs: Tuple,
     ) -> None:
+        """
+        Args:
+            kernel: kernel function
+            kernel_params: kernel parameters
+            sigma: standard deviation of the gaussian noise
+            x_locs: landmark points (support points) of SGPR
+        """
         self.kernel = kernel
         self.kernel_params = kernel_params
         self.sigma = sigma
@@ -301,11 +323,23 @@ class SparseGaussianProcessRegression:
         )
 
     def print(self) -> None:
+        "prints the model parameters"
         return self.state.print_params()
 
     def log_marginal_likelihood(
         self, x: Array, y: Array, return_negative: Optional[bool] = False
     ) -> Array:
+        """log marginal likelihood for SGPR (projected processes)
+
+            lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+
+            H = K_nm (K_mm)⁻¹ K_mn
+
+        Args:
+            x: observations
+            y: labels
+            return_negative: whether to return the negative of the lml
+        """
         return log_marginal_likelihood(
             self.state,
             x=x,
@@ -314,6 +348,18 @@ class SparseGaussianProcessRegression:
         )
 
     def fit(self, x: Array, y: Array, minimize_lml: Optional[bool] = True) -> Self:
+        """fits a SGPR (projected processes)
+
+            y_mean = (1/n) Σ_i y_i
+
+            c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+        Args:
+            x: observations
+            y: labels
+            minimize_lml: whether to tune the parameters to optimize the
+                          log marginal likelihood
+        """
         if minimize_lml:
             loss_fn = partial(log_marginal_likelihood, return_negative=True)
             self.state, optres = scipy_minimize(self.state, x=x, y=y, loss_fn=loss_fn)
@@ -328,6 +374,16 @@ class SparseGaussianProcessRegression:
         return self
 
     def predict(self, x: Array, full_covariance: Optional[bool] = False) -> Array:
+        """predicts with a SGPR (projected processes)
+
+            μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+
+            C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+
+        Args:
+            x: observations
+            full_covariance: whether to return the covariance matrix too
+        """
         if not hasattr(self, "c_"):
             class_name = self.__class__.__name__
             raise RuntimeError(
@@ -343,6 +399,15 @@ class SparseGaussianProcessRegression:
         n_samples: Optional[int] = 1,
         kind: Optional[str] = "prior",
     ):
+        """draws samples from a SGPR (projected processes)
+
+        Args:
+            key: JAX PRNGKey
+            x: observations
+            n_samples: number of samples to draw
+            kind: whether to draw samples from the prior ('prior')
+                  or from the posterior ('posterior')
+        """
         if kind == "prior":
             return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
         elif kind == "posterior":

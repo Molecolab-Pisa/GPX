@@ -250,7 +250,7 @@ def init(kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple) -> Mod
     Args:
         kernel: kernel function
         kernel_params: kernel parameters
-        sigma: variance of gaussian noise
+        sigma: standard deviation of gaussian noise
     Returns:
         state: model state
     """
@@ -289,7 +289,7 @@ class GaussianProcessRegression:
         Args:
             kernel: kernel function
             kernel_params: kernel parameters
-            sigma: variance of the gaussian noise
+            sigma: standard deviation of the gaussian noise
         """
         self.kernel = kernel
         self.kernel_params = kernel_params
