@@ -385,7 +385,9 @@ class GaussianProcessRegression:
         if kind == "prior":
             return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
         elif kind == "posterior":
-            return sample_posterior(key, state=self.state, x=x, n_samples=n_samples)
+            return sample_posterior(
+                key, state=self.state, x_train=self.x_train, x=x, n_samples=n_samples
+            )
         else:
             raise ValueError(
                 f"kind can be either 'prior' or 'posterior', you provided {kind}"
