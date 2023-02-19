@@ -123,10 +123,14 @@ def grad01_kernelize(k: Callable) -> Callable:
     """
     d01k = _grad01_kernelize(k)
 
-    def wrapper(x1, x2, params):
+    def wrapper(x1, x2, params, jacobian):
         # n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
         gram = d01k(x1, x2, params)
-        return jnp.transpose(gram, axes=(2, 0, 1, 3))
+        gram = jnp.transpose(gram, axes=(2, 0, 1, 3))
+        gram = jnp.einsum("ijk,ijlm,mln->jkln", jacobian, gram, jacobian)
+        d, n, m, e = gram.shape
+        return jnp.reshape(gram, (n * d, m * e))
+        # return jnp.transpose(gram, axes=(2, 0, 1, 3))
         # gram = jnp.transpose(gram, axes=(0, 2, 1, 3))
         # return jnp.reshape(gram, (n * d, m * d))
 
