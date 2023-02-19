@@ -97,7 +97,11 @@ def _fit(
     y_mean = jnp.mean(y)
     y = y - y_mean
 
-    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(y.shape[0])
+    C_mm = (
+        kernel(x, x, kernel_params)
+        + sigma**2 * jnp.eye(y.shape[0])
+        + 1e-10 * jnp.eye(y.shape[0])
+    )
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
 
     return c, y_mean

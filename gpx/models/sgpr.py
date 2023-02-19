@@ -111,7 +111,11 @@ def _fit(
     y = y - y_mean
 
     K_mn = kernel(x_locs, x, kernel_params)
-    C_mm = sigma**2 * kernel(x_locs, x_locs, kernel_params) + jnp.dot(K_mn, K_mn.T)
+    C_mm = (
+        sigma**2 * kernel(x_locs, x_locs, kernel_params)
+        + jnp.dot(K_mn, K_mn.T)
+        + 1e-10 * jnp.eye(x_locs.shape[0])
+    )
     c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
 
     return c, y_mean
