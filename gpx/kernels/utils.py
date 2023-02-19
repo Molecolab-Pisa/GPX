@@ -97,14 +97,16 @@ def grad1_kernelize(k: Callable) -> Callable:
     """
     d1k = _grad1_kernelize(k)
 
-    def wrapper(x1, x2, params):
+    def wrapper(x1, x2, params, jacobian):
         """Derivative kernel with respect to the second argument.
 
         d/d1(k) = cov(y, w) with y = f(x) and w = d/dx(f)(x).
         """
         # n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
         gram = d1k(x1, x2, params)
-        return gram
+        gram = jnp.einsum("ijk,kjl->ijl", gram, jacobian)
+        m, n, d = gram.shape
+        return jnp.reshape(gram, (m, n * d))
         # return jnp.reshape(gram, (n, m * d))
 
     return wrapper
