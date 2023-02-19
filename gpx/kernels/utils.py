@@ -67,14 +67,18 @@ def grad0_kernelize(k: Callable) -> Callable:
     """
     d0k = _grad0_kernelize(k)
 
-    def wrapper(x1, x2, params):
+    def wrapper(x1, x2, params, jacobian):
         """Derivative kernel with respect to the first argument.
 
         d/d0(k) = cov(w, y) with y = f(x) and w = d/dx(f)(x).
         """
         # n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
         gram = d0k(x1, x2, params)
-        return jnp.transpose(gram, axes=(2, 1, 0))
+        gram = jnp.transpose(gram, axes=(2, 1, 0))
+        gram = jnp.einsum("ijk,ijl->jkl", jacobian, gram)
+        n, d, m = gram.shape
+        return jnp.reshape(gram, (n * d, m))
+        # return jnp.transpose(gram, axes=(2, 1, 0))
         # gram = jnp.transpose(gram, axes=(0, 2, 1))
         # return jnp.reshape(gram, (n * d, m))
 
