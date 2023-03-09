@@ -216,7 +216,7 @@ def predict(
 
 
 def sample_prior(
-    key: prng.PRNGKeyjnp.ndarray,
+    key: prng.PRNGKeyArray,
     state: ModelState,
     x: jnp.ndarray,
     n_samples: Optional[int] = 1,
@@ -244,7 +244,7 @@ def sample_prior(
 
 
 def sample_posterior(
-    key: prng.PRNGKeyjnp.ndarray,
+    key: prng.PRNGKeyArray,
     state: ModelState,
     x: jnp.ndarray,
     n_samples: Optional[int] = 1,
@@ -409,7 +409,7 @@ class SparseGaussianProcessRegression:
 
     def sample(
         self,
-        key: prng.PRNGKeyjnp.ndarray,
+        key: prng.PRNGKeyArray,
         x: jnp.ndarray,
         n_samples: Optional[int] = 1,
         kind: Optional[str] = "prior",

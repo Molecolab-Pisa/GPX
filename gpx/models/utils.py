@@ -7,7 +7,7 @@ from jax._src import prng
 
 
 def sample(
-    key: prng.PRNGKeyjnp.ndarray,
+    key: prng.PRNGKeyArray,
     mean: jnp.ndarray,
     cov: jnp.ndarray,
     n_samples: Optional[int] = 1,
