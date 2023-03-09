@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Dict
 
 import jax.numpy as jnp
 from jax import jit
@@ -7,15 +7,15 @@ from .utils import kernelize
 from ..utils import squared_distances
 from ..parameters.parameter import Parameter
 
-Array = Any
-
 
 # =============================================================================
 # Squared Exponential Kernel
 # =============================================================================
 
 
-def _squared_exponential_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
+def _squared_exponential_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
+) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     return jnp.exp(-jnp.sum((z1 - z2) ** 2))
@@ -23,13 +23,15 @@ def _squared_exponential_kernel_base(x1: Array, x2: Array, lengthscale: float) -
 
 @jit
 def squared_exponential_kernel_base(
-    x1: Array, x2: Array, params: Dict[str, Parameter]
-) -> Array:
+    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
+) -> jnp.ndarray:
     lengthscale = params["lengthscale"].value
     return _squared_exponential_kernel_base(x1, x2, lengthscale)
 
 
-def _squared_exponential_kernel(x1: Array, x2: Array, lengthscale: float) -> Array:
+def _squared_exponential_kernel(
+    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
+) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
@@ -38,8 +40,8 @@ def _squared_exponential_kernel(x1: Array, x2: Array, lengthscale: float) -> Arr
 
 @jit
 def squared_exponential_kernel(
-    x1: Array, x2: Array, params: Dict[str, Parameter]
-) -> Array:
+    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
+) -> jnp.ndarray:
     lengthscale = params["lengthscale"].value
     return _squared_exponential_kernel(x1, x2, lengthscale)
 
@@ -49,7 +51,9 @@ def squared_exponential_kernel(
 # =============================================================================
 
 
-def _matern12_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
+def _matern12_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
+) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
@@ -57,7 +61,9 @@ def _matern12_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
 
 
 @jit
-def matern12_kernel_base(x1: Array, x2: Array, params: Dict[str, Parameter]) -> Array:
+def matern12_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
+) -> jnp.ndarray:
     lengthscale = params["lengthscale"].value
     return _matern12_kernel_base(x1, x2, lengthscale)
 
@@ -70,7 +76,9 @@ matern12_kernel = kernelize(matern12_kernel_base)
 # =============================================================================
 
 
-def _matern32_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
+def _matern32_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
+) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(3.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
@@ -78,7 +86,9 @@ def _matern32_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
 
 
 @jit
-def matern32_kernel_base(x1: Array, x2: Array, params: Dict[str, Parameter]) -> Array:
+def matern32_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
+) -> jnp.ndarray:
     lengthscale = params["lengthscale"]
     return _matern32_kernel_base(x1, x2, lengthscale)
 
@@ -91,7 +101,9 @@ matern32_kernel = kernelize(matern32_kernel_base)
 # =============================================================================
 
 
-def _matern52_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
+def _matern52_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
+) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
@@ -99,7 +111,9 @@ def _matern52_kernel_base(x1: Array, x2: Array, lengthscale: float) -> Array:
 
 
 @jit
-def matern52_kernel_base(x1: Array, x2: Array, params: Dict[str, Parameter]) -> Array:
+def matern52_kernel_base(
+    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
+) -> jnp.ndarray:
     lengthscale = params["lengthscale"]
     return _matern52_kernel_base(x1, x2, lengthscale)
 

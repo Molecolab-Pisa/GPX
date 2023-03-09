@@ -1,9 +1,10 @@
-from typing import Any, Dict, Generator
+from __future__ import annotations
+from typing import Dict, Generator
 
-Array = Any
+import jax.numpy as jnp
 
 
-def _recursive_traverse_dict(dictionary: Dict) -> Generator[Array, None, None]:
+def _recursive_traverse_dict(dictionary: Dict) -> Generator[jnp.ndarray, None, None]:
     for key in dictionary.keys():
         value = dictionary[key]
         if isinstance(value, dict):

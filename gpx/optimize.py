@@ -1,15 +1,15 @@
-from typing import Any, Tuple, Callable
+from __future__ import annotations
+from typing import Tuple, Callable
 
 from .parameters.model_state import ModelState
 
 from jax.tree_util import tree_flatten, tree_unflatten
 from jax.flatten_util import ravel_pytree
 from jax import grad, jit
+import jax.numpy as jnp
 
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
-
-Array = Any
 
 
 # ============================================================================
@@ -18,7 +18,7 @@ Array = Any
 
 
 def scipy_minimize(
-    state: ModelState, x: Array, y: Array, loss_fn: Callable
+    state: ModelState, x: jnp.ndarray, y: jnp.ndarray, loss_fn: Callable
 ) -> Tuple[ModelState, OptimizeResult]:
 
     fwd_fns = state.params_forward_transforms

@@ -1,16 +1,15 @@
+from __future__ import annotations
 from typing import Any, Tuple, Callable, Union
 
 import jax
 import jax.numpy as jnp
-
-Array = Any
 
 
 @jax.tree_util.register_pytree_node_class
 class Parameter:
     def __init__(
         self,
-        value: Union[float, Array],
+        value: Union[float, jnp.ndarray],
         trainable: bool,
         forward_transform: Callable,
         backward_transform: Callable,
@@ -24,24 +23,24 @@ class Parameter:
         name = self.__class__.__name__
         return f"{name}(value={self.value}, trainable={self.trainable}, forward_transform={self.forward_transform}, backward_transform={self.backward_transform})"
 
-    def tree_flatten(self) -> Tuple[Array, Any]:
+    def tree_flatten(self) -> Tuple[jnp.ndarray, Any]:
         children = (self.value,)
         aux_data = (self.trainable, self.forward_transform, self.backward_transform)
         return children, aux_data
 
     @classmethod
-    def tree_unflatten(cls, aux_data: Any, children: Array) -> "Parameter":
+    def tree_unflatten(cls, aux_data: Any, children: jnp.ndarray) -> "Parameter":
         return cls(*children, *aux_data)
 
 
-def parse_param(param: Tuple[Array, bool, Callable, Callable]) -> Parameter:
-    errmsg = "Provide each parameter as a 4-tuple (value: float|jax.Array, trainable: bool, forward: callable, backward: callable)"
+def parse_param(param: Tuple[jnp.ndarray, bool, Callable, Callable]) -> Parameter:
+    errmsg = "Provide each parameter as a 4-tuple (value: float|jax.jnp.ndarray, trainable: bool, forward: callable, backward: callable)"
     try:
         value, trainable, forward, backward = param
     except TypeError as e:
         raise TypeError(f"{e}. {errmsg}") from None
 
-    if not isinstance(value, float) and not isinstance(value, jax.Array):
+    if not isinstance(value, float) and not isinstance(value, jax.jnp.ndarray):
         raise RuntimeError(f"You provided value as {type(value)}. {errmsg}")
 
     if not isinstance(trainable, bool):

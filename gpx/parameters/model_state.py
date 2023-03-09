@@ -1,15 +1,14 @@
-from typing import Dict, Callable, Any, List, Optional, Tuple
+from __future__ import annotations
+from typing import Dict, Callable, List, Optional, Tuple, Any
 
 from .utils import _recursive_traverse_dict
 from .parameter import Parameter
 
 import jax
+import jax.numpy as jnp
 
 import numpy as np
 from tabulate import tabulate
-
-
-Array = Any
 
 
 @jax.tree_util.register_pytree_node_class
@@ -79,21 +78,21 @@ class ModelState:
     def params_backward_transforms(self) -> List[Callable]:
         return self._params_backward_transforms(self.params)
 
-    def _params_value(self, params: Dict[str, Parameter]) -> List[Array]:
+    def _params_value(self, params: Dict[str, Parameter]) -> List[jnp.ndarray]:
         return [p.value for p in _recursive_traverse_dict(params)]
 
     @property
-    def params_value(self) -> List[Array]:
+    def params_value(self) -> List[jnp.ndarray]:
         return self._params_value(self.params)
 
-    def _params_trainable(self, params: Dict[str, Parameter]) -> List[Array]:
+    def _params_trainable(self, params: Dict[str, Parameter]) -> List[jnp.ndarray]:
         return [p.trainable for p in _recursive_traverse_dict(params)]
 
     @property
-    def params_trainable(self) -> List[Array]:
+    def params_trainable(self) -> List[jnp.ndarray]:
         return self._params_trainable(self.params)
 
-    def tree_flatten(self) -> Tuple[Array, Any]:
+    def tree_flatten(self) -> Tuple[jnp.ndarray, Any]:
         params_value = self.params_value
         params_trainable = self.params_trainable
         params_value = [
@@ -116,7 +115,7 @@ class ModelState:
         )
 
     @classmethod
-    def tree_unflatten(cls, aux_data: Any, children: Array) -> "ModelState":
+    def tree_unflatten(cls, aux_data: Any, children: jnp.ndarray) -> "ModelState":
         kernel, params_structure, opt = aux_data
         params = jax.tree_util.tree_unflatten(params_structure, children)
         return cls(kernel, params, **opt)

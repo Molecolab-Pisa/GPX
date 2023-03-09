@@ -1,9 +1,7 @@
-from typing import Any
+from __future__ import annotations
 
 import jax.numpy as jnp
 from jax import jit
-
-Array = Any
 
 
 # =============================================================================
@@ -12,7 +10,7 @@ Array = Any
 
 
 @jit
-def squared_distances(x1: Array, x2: Array) -> Array:
+def squared_distances(x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
     jitter = 1e-12
     x1s = jnp.sum(jnp.square(x1), axis=-1)
     x2s = jnp.sum(jnp.square(x2), axis=-1)
@@ -26,17 +24,17 @@ def squared_distances(x1: Array, x2: Array) -> Array:
 
 
 @jit
-def softplus(x: Array) -> Array:
+def softplus(x: jnp.ndarray) -> jnp.ndarray:
     return jnp.logaddexp(x, 0.0)
 
 
 @jit
-def inverse_softplus(x: Array) -> Array:
+def inverse_softplus(x: jnp.ndarray) -> jnp.ndarray:
     return jnp.log(jnp.expm1(x))
 
 
 @jit
-def identity(x: Array) -> Array:
+def identity(x: jnp.ndarray) -> jnp.ndarray:
     return x
 
 

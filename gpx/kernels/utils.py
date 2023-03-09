@@ -1,11 +1,10 @@
-from typing import Any, Callable, Tuple, Union
+from __future__ import annotations
+from typing import Callable, Tuple, Union
 
 import functools
 from functools import partial
 import jax.numpy as jnp
 from jax import vmap, jvp, jacrev, jacfwd
-
-Array = Any
 
 
 # =============================================================================
