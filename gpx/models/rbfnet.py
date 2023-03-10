@@ -55,6 +55,7 @@ def init(
     kernel_params: Dict[str, Tuple],
     num_input: int,
     num_output: int,
+    output_layer: Callable = identity,
 ) -> ModelState:
     if not callable(kernel):
         raise RuntimeError(
@@ -79,8 +80,9 @@ def init(
         kp[key] = parse_param(param)
 
     params = {"kernel_params": kp, "weights": weights}
+    opt = {"output_layer": output_layer}
 
-    return ModelState(kernel, params)
+    return ModelState(kernel, params, **opt)
 
 
 # =============================================================================
