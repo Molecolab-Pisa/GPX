@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Callable, Dict, Tuple
+from typing_extensions import Self
 
 from functools import partial
 
@@ -11,6 +12,7 @@ from jax._src import prng
 from ..utils import identity, softplus, inverse_softplus
 from ..parameters import ModelState
 from ..parameters.parameter import parse_param, Parameter
+from ..optimize import scipy_minimize
 
 
 @partial(jit, static_argnums=[3, 4])
@@ -84,6 +86,7 @@ def init(
     num_output: int,
     output_layer: Callable = identity,
     alpha: Tuple = (1.0, True, softplus, inverse_softplus),
+    loss_fn: Callable = train_loss,
 ) -> ModelState:
     if not callable(kernel):
         raise RuntimeError(
@@ -111,7 +114,7 @@ def init(
 
     # Careful, as here the order matters (thought it shouldn't for a good api)
     params = {"alpha": alpha, "kernel_params": kp, "weights": weights}
-    opt = {"output_layer": output_layer}
+    opt = {"output_layer": output_layer, "loss_fn": loss_fn}
 
     return ModelState(kernel, params, **opt)
 
@@ -122,8 +125,55 @@ def init(
 
 
 class RadialBasisFunctionNetwork:
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(
+        self,
+        key: prng.PRNGKeyArray,
+        kernel: Callable,
+        kernel_params: Dict[str, Tuple],
+        num_input: int,
+        num_output: int,
+        output_layer: Callable = identity,
+        alpha: Tuple = (1.0, True, softplus, inverse_softplus),
+        loss_fn: Callable = train_loss,
+    ) -> None:
+        self.key = key
+        self.kernel = kernel
+        self.kernel_params = kernel_params
+        self.num_input = num_input
+        self.num_output = num_output
+        self.alpha = alpha
+        self.output_layer = output_layer
+        self.loss_fn = loss_fn
+        self.state = init(
+            key=key,
+            kernel=kernel,
+            kernel_params=kernel_params,
+            num_input=num_input,
+            num_output=num_output,
+            alpha=alpha,
+            output_layer=output_layer,
+            loss_fn=loss_fn,
+        )
+
+    def print(self) -> None:
+        "prints the model parameters"
+        return self.state.print_params()
+
+    def fit(self, x: jnp.ndarray, y: jnp.ndarray) -> Self:
+        self.state, optres = scipy_minimize(
+            self.state, x=x, y=y, loss_fn=self.state.loss_fn
+        )
+        self.optimize_results_ = optres
+        self.x_train = x
+
+    def predict(self, x: jnp.ndarray) -> jnp.ndarray:
+        if not hasattr(self, "x_train"):
+            class_name = self.__class__.__name__
+            raise RuntimeError(
+                f"{class_name} is not fitted yet. "
+                "Call 'fit' before using this model for prediction."
+            )
+        return predict(self.state, x_train=self.x_train, x_pred=x)
 
 
 # Alias

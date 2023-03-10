@@ -1,7 +1,7 @@
 from __future__ import annotations
-
 from typing import Callable, Tuple, Dict, Optional
 from typing_extensions import Self
+
 from functools import partial
 
 import jax.numpy as jnp
