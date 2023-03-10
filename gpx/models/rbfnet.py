@@ -1,6 +1,10 @@
 from __future__ import annotations
 from typing import Callable, Dict, Tuple
 
+from functools import partial
+
+import jax.numpy as jnp
+from jax import jit
 from jax import random
 from jax._src import prng
 
@@ -9,12 +13,40 @@ from ..parameters import ModelState
 from ..parameters.parameter import parse_param, Parameter
 
 
-def mse_loss():
-    raise NotImplementedError
+@partial(jit, static_argnums=[3])
+def _train_loss(
+    params: Dict[str, Parameter], x: jnp.ndarray, y: jnp.ndarray, kernel: Callable
+) -> jnp.ndarray:
+    y_pred = _predict(params=params, x_train=x, x_pred=x, kernel=kernel)
+    return jnp.mean((y_pred - y) ** 2)
 
 
-def predict():
-    raise NotImplementedError
+def train_loss(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+    return _train_loss(params=state.params, x=x, y=y, kernel=state.kernel)
+
+
+@partial(jit, static_argnums=[3])
+def _predict(
+    params: Dict[str, Parameter],
+    x_train: jnp.ndarray,
+    x_pred: jnp.ndarray,
+    kernel: Callable,
+) -> jnp.ndarray:
+    kernel_params = params["kernel_params"]
+    weights = params["weights"].value
+
+    gram = kernel(x_pred, x_train, kernel_params)
+    pred = jnp.dot(gram, weights)
+
+    return pred
+
+
+def predict(
+    state: ModelState, x_train: jnp.ndarray, x_pred: jnp.ndarray
+) -> jnp.ndarray:
+    return _predict(
+        params=state.params, x_train=x_train, x_pred=x_pred, kernel=state.kernel
+    )
 
 
 def init(
