@@ -9,6 +9,14 @@ from ..parameters import ModelState
 from ..parameters.parameter import parse_param, Parameter
 
 
+def mse_loss():
+    raise NotImplementedError
+
+
+def predict():
+    raise NotImplementedError
+
+
 def init(
     key: prng.PRNGKeyArray,
     kernel: Callable,
@@ -41,3 +49,17 @@ def init(
     params = {"kernel_params": kp, "weights": weights}
 
     return ModelState(kernel, params)
+
+
+# =============================================================================
+# RBF Network: interface
+# =============================================================================
+
+
+class RadialBasisFunctionNetwork:
+    def __init__(self):
+        raise NotImplementedError
+
+
+# Alias
+RBFNet = RadialBasisFunctionNetwork
