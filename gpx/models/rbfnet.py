@@ -23,9 +23,7 @@ def _train_loss(
     kernel: Callable,
     output_layer: Callable,
 ) -> jnp.ndarray:
-    y_pred = _predict(
-        params=params, x_train=x, x_pred=x, kernel=kernel, output_layer=output_layer
-    )
+    y_pred = _predict(params=params, x=x, kernel=kernel, output_layer=output_layer)
 
     alpha = params["alpha"].value
     weights = params["weights"].value
@@ -47,18 +45,18 @@ def train_loss(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray
     )
 
 
-@partial(jit, static_argnums=[3, 4])
+@partial(jit, static_argnums=[2, 3])
 def _predict(
     params: Dict[str, Parameter],
-    x_train: jnp.ndarray,
-    x_pred: jnp.ndarray,
+    x: jnp.ndarray,
     kernel: Callable,
     output_layer: Callable,
 ) -> jnp.ndarray:
     kernel_params = params["kernel_params"]
     weights = params["weights"].value
+    x_inducing = params["inducing_points"].value
 
-    gram = kernel(x_pred, x_train, kernel_params)
+    gram = kernel(x, x_inducing, kernel_params)
     pred = jnp.dot(gram, weights)
 
     pred = output_layer(pred)
@@ -66,13 +64,10 @@ def _predict(
     return pred
 
 
-def predict(
-    state: ModelState, x_train: jnp.ndarray, x_pred: jnp.ndarray
-) -> jnp.ndarray:
+def predict(state: ModelState, x: jnp.ndarray) -> jnp.ndarray:
     return _predict(
         params=state.params,
-        x_train=x_train,
-        x_pred=x_pred,
+        x=x,
         kernel=state.kernel,
         output_layer=state.output_layer,
     )
@@ -82,7 +77,7 @@ def init(
     key: prng.PRNGKeyArray,
     kernel: Callable,
     kernel_params: Dict[str, Tuple],
-    num_input: int,
+    inducing_points: Tuple,
     num_output: int,
     output_layer: Callable = identity,
     alpha: Tuple = (1.0, True, softplus, inverse_softplus),
@@ -97,6 +92,11 @@ def init(
         raise RuntimeError(
             f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
         )
+
+    inducing_points = parse_param(inducing_points)
+
+    # number of inducing points
+    num_input = inducing_points.value.shape[0]
 
     weights = Parameter(
         random.normal(key, shape=(num_input, num_output)),
@@ -113,7 +113,12 @@ def init(
     alpha = parse_param(alpha)
 
     # Careful, as here the order matters (thought it shouldn't for a good api)
-    params = {"alpha": alpha, "kernel_params": kp, "weights": weights}
+    params = {
+        "alpha": alpha,
+        "inducing_points": inducing_points,
+        "kernel_params": kp,
+        "weights": weights,
+    }
     opt = {"output_layer": output_layer, "loss_fn": loss_fn}
 
     return ModelState(kernel, params, **opt)
@@ -130,7 +135,7 @@ class RadialBasisFunctionNetwork:
         key: prng.PRNGKeyArray,
         kernel: Callable,
         kernel_params: Dict[str, Tuple],
-        num_input: int,
+        inducing_points: Tuple,
         num_output: int,
         output_layer: Callable = identity,
         alpha: Tuple = (1.0, True, softplus, inverse_softplus),
@@ -139,7 +144,7 @@ class RadialBasisFunctionNetwork:
         self.key = key
         self.kernel = kernel
         self.kernel_params = kernel_params
-        self.num_input = num_input
+        self.inducing_points = inducing_points
         self.num_output = num_output
         self.alpha = alpha
         self.output_layer = output_layer
@@ -148,7 +153,7 @@ class RadialBasisFunctionNetwork:
             key=key,
             kernel=kernel,
             kernel_params=kernel_params,
-            num_input=num_input,
+            inducing_points=inducing_points,
             num_output=num_output,
             alpha=alpha,
             output_layer=output_layer,
@@ -167,13 +172,7 @@ class RadialBasisFunctionNetwork:
         self.x_train = x
 
     def predict(self, x: jnp.ndarray) -> jnp.ndarray:
-        if not hasattr(self, "x_train"):
-            class_name = self.__class__.__name__
-            raise RuntimeError(
-                f"{class_name} is not fitted yet. "
-                "Call 'fit' before using this model for prediction."
-            )
-        return predict(self.state, x_train=self.x_train, x_pred=x)
+        return predict(self.state, x=x)
 
 
 # Alias

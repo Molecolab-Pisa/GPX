@@ -40,7 +40,7 @@ def parse_param(param: Tuple[jnp.ndarray, bool, Callable, Callable]) -> Paramete
     except TypeError as e:
         raise TypeError(f"{e}. {errmsg}") from None
 
-    if not isinstance(value, float) and not isinstance(value, jax.jnp.ndarray):
+    if not isinstance(value, float) and not isinstance(value, jnp.ndarray):
         raise RuntimeError(f"You provided value as {type(value)}. {errmsg}")
 
     if not isinstance(trainable, bool):
