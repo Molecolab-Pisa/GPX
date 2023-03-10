@@ -136,14 +136,31 @@ class ModelState:
         params = self.params.copy()
         kernel_params = params.pop("kernel_params")
 
-        headers = ["name", "type", "dtype", "shape", "trainable", "value"]
+        headers = [
+            "name",
+            "trainable",
+            "forward",
+            "backward",
+            "type",
+            "dtype",
+            "shape",
+            "value",
+        ]
 
         def string_repr(p):
             return np.array2string(p.value, edgeitems=1, threshold=1)
 
         def get_info(p):
             v = p.value
-            return (type(v), v.dtype, v.shape, p.trainable, string_repr(p))
+            return (
+                p.trainable,
+                p.forward_transform.__name__,
+                p.backward_transform.__name__,
+                type(v).__name__,
+                v.dtype,
+                v.shape,
+                string_repr(p),
+            )
 
         fields = [["kernel " + k] + list(get_info(p)) for k, p in kernel_params.items()]
         fields += [[k] + list(get_info(p)) for k, p in params.items()]
