@@ -45,12 +45,9 @@ def train_loss(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray
     )
 
 
-@partial(jit, static_argnums=[2, 3])
-def _predict(
-    params: Dict[str, Parameter],
-    x: jnp.ndarray,
-    kernel: Callable,
-    output_layer: Callable,
+@partial(jit, static_argnums=[2])
+def _predict_linear(
+    params: Dict[str, Parameter], x: jnp.ndarray, kernel: Callable
 ) -> jnp.ndarray:
     kernel_params = params["kernel_params"]
     weights = params["weights"].value
@@ -59,18 +56,38 @@ def _predict(
     gram = kernel(x, x_inducing, kernel_params)
     pred = jnp.dot(gram, weights)
 
+    return pred
+
+
+@partial(jit, static_argnums=[2, 3])
+def _predict(
+    params: Dict[str, Parameter],
+    x: jnp.ndarray,
+    kernel: Callable,
+    output_layer: Callable,
+) -> jnp.ndarray:
+    pred = _predict_linear(params=params, x=x, kernel=kernel)
     pred = output_layer(pred)
 
     return pred
 
 
-def predict(state: ModelState, x: jnp.ndarray) -> jnp.ndarray:
-    return _predict(
-        params=state.params,
-        x=x,
-        kernel=state.kernel,
-        output_layer=state.output_layer,
-    )
+def predict(
+    state: ModelState, x: jnp.ndarray, linear_only: bool = False
+) -> jnp.ndarray:
+    if linear_only:
+        return _predict_linear(
+            params=state.params,
+            x=x,
+            kernel=state.kernel,
+        )
+    else:
+        return _predict(
+            params=state.params,
+            x=x,
+            kernel=state.kernel,
+            output_layer=state.output_layer,
+        )
 
 
 def init(
@@ -171,8 +188,8 @@ class RadialBasisFunctionNetwork:
         self.optimize_results_ = optres
         self.x_train = x
 
-    def predict(self, x: jnp.ndarray) -> jnp.ndarray:
-        return predict(self.state, x=x)
+    def predict(self, x: jnp.ndarray, linear_only: bool = False) -> jnp.ndarray:
+        return predict(self.state, x=x, linear_only=linear_only)
 
 
 # Alias
