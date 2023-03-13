@@ -147,6 +147,8 @@ def init(
 
 
 class RadialBasisFunctionNetwork:
+    "Radial Basis Function Network"
+
     def __init__(
         self,
         key: prng.PRNGKeyArray,
@@ -158,6 +160,37 @@ class RadialBasisFunctionNetwork:
         alpha: Tuple = (1.0, True, softplus, inverse_softplus),
         loss_fn: Callable = train_loss,
     ) -> None:
+        """
+        Args:
+            key: JAX random PRNGKey.
+                 used for instantiating the model weights (they
+                 are initialized by sampling a normal distribution)
+            kernel: kernel function.
+            kernel_params: kernel parameters.
+                           should be provided as a dictionary mapping
+                           the parameter name to a 4-tuple, which specifies
+                           the value, whether the parameter is trainable, and the
+                           forward and backward transformation functions for the
+                           parameter.
+            inducing_points: inducing points.
+                             the kernel matrix is evaluated between points provided
+                             by the user and the inducing points.
+                             if the number of inducing points is smaller than the
+                             train set points, then the model is sparse.
+                             should be provided as a 4-tuple, as they are casted as
+                             a parameter of the model.
+            num_output: number of outputs of the RBF layer.
+            output_layer: output_layer, taking as input the prediction of the RBF
+                          layer, and outputting a transformed prediction.
+                          should accept a jnp.ndarray with shape (n, num_output),
+                          where n is the number of samples, and should output another
+                          jnp.ndarray of shape (n, num_output')
+            alpha: regularization parameter of the L2 regularization term in the
+                   default loss function. If another loss is used, alpha is ignored.
+            loss_fn: loss function used to optimize the model parameters.
+                     by default, it minimizes the squared error plus the L2 regularization
+                     term.
+        """
         self.key = key
         self.kernel = kernel
         self.kernel_params = kernel_params
