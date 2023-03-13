@@ -20,6 +20,27 @@ from scipy.optimize._optimize import OptimizeResult
 def scipy_minimize(
     state: ModelState, x: jnp.ndarray, y: jnp.ndarray, loss_fn: Callable
 ) -> Tuple[ModelState, OptimizeResult]:
+    """minimization of a loss function using SciPy's L-BFGS-B
+
+    Performs the minimization of the `loss_fn` loss function using
+    SciPy's L-BFGS-B optimizator.
+
+    Args:
+        state: model state. Should have an attribute `params`
+               containing the parameters to be optimized, and
+               attributes `params_forward_transforms` and
+               `params_backward_transforms` storing the forward
+               and backward function that constraining the values
+               of the hyperparameters.
+               The state is passed as an argument to the loss function.
+        x: observations
+        y: target values
+        loss_fn: loss function with signature loss_fn(state, x, y),
+                 returning a scalar value
+    Returns:
+        state: updated model state
+        optser: optimization results, as output by the SciPy's optimizer
+    """
 
     fwd_fns = state.params_forward_transforms
     bwd_fns = state.params_backward_transforms
@@ -47,7 +68,7 @@ def scipy_minimize(
     def loss(xt, state):
         # important: here we first reconstruct the model state with the
         # updated parameters before feeding it to the loss (lml).
-        # this ensures that gradients are stopped for parameter with
+        # this ensures that gradients are stopped for parameters with
         # trainable = False.
         params = unravel_forward(xt)
         state = state.update(dict(params=params))
