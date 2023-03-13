@@ -3,7 +3,7 @@ from typing import Dict
 import jax.numpy as jnp
 from jax import jit
 
-from .utils import kernelize
+from .kernelizers import kernelize
 from ..utils import squared_distances
 from ..parameters.parameter import Parameter
 

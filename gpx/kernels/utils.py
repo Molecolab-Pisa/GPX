@@ -1,42 +1,10 @@
 from __future__ import annotations
 from typing import Callable, Tuple, Union
 
-import functools
 from functools import partial
 import jax.numpy as jnp
-from jax import vmap, jvp, jacrev, jacfwd
-
-
-# =============================================================================
-# Kernel Decorator
-# =============================================================================
-
-
-def kernelize(kernel_func: Callable) -> Callable:
-    """Decorator to promote a kernel function operating on single samples to a
-       function operating on batches.
-
-    With this decorator, you can write a function operating on a pair of
-    samples, and vectorize it so that it accepts two batches of samples.
-    Note that this may not be the fastest way to write your kernel.
-    Still, it can be useful in the general setting, and to test the values
-    of your kernel.
-
-    Args:
-        kernel_func: a function accepting three arguments: x1, x2, and params.
-          x1 and x2 are two samples of data, while params is a dictionary of
-          kernel parameters.
-
-    Returns:
-        A vectorized kernel function that applies the original `kernel_func`
-        to batches of data.
-    """
-
-    @functools.wraps(kernel_func)
-    def kernel(x1, x2, params):
-        return vmap(lambda x: vmap(lambda y: kernel_func(x, y, params))(x2))(x1)
-
-    return kernel
+from jax import jvp, jacrev, jacfwd
+from .kernelizers import kernelize
 
 
 # =============================================================================

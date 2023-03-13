@@ -8,4 +8,3 @@ from .kernels import (
     m32_kernel,
     m52_kernel,
 )
-from .utils import kernelize, grad_kernelize, grad_kernel
