@@ -12,7 +12,7 @@ from jax import vmap, jit
 # =============================================================================
 
 
-def kernelize(kernel_func: Callable, lax: bool = False) -> Callable:
+def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
     """Decorator to promote a kernel function operating on single samples to a
        function operating on batches.
 
@@ -28,7 +28,7 @@ def kernelize(kernel_func: Callable, lax: bool = False) -> Callable:
           kernel parameters.
         lax: whether to use a kernelizer implemented with jax.lax operations
              (True) or a kernelizer implemented with vmap (False).
-             The vmap version (default) should be faster for small number
+             The vmap version should be faster for small number
              of samples, but can break as the number of samples increases.
              The lax version is slower, but scales much better with the number
              of samples.
