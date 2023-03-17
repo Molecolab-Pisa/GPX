@@ -70,8 +70,32 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
 # =============================================================================
 
 
-def _grad0_kernelize(k: Callable, lax: bool = False) -> Callable:
-    return kernelize(jacrev(k, argnums=0), lax=lax)
+def _grad0_kernelize(kernel_func: Callable, lax: bool = False) -> Callable:
+    kernel_func = jacrev(kernel_func, argnums=0)
+
+    if lax:
+
+        @functools.wraps(kernel_func)
+        @jit
+        def kernel(x1, x2, params):
+            n, nf = x1.shape
+            m, _ = x2.shape
+            gram = jnp.zeros((n, m, nf))
+
+            def update_row(i, gram):
+                def update_col(j, gram):
+                    return gram.at[i, j, :].set(kernel_func(x1[i], x2[j], params))
+
+                return jax.lax.fori_loop(0, m, update_col, gram)
+
+            return jax.lax.fori_loop(0, n, update_row, gram)
+
+    else:
+
+        # vmap version is compatible with jacrev
+        kernel = kernelize(kernel_func, lax=False)
+
+    return kernel
 
 
 def _grad1_kernelize(k: Callable, lax: bool = False) -> Callable:
