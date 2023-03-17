@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Callable, Tuple, Union
 
 import functools
+from functools import partial
 import jax
 import jax.numpy as jnp
 from jax import vmap, jit, jacrev, jacfwd
@@ -69,19 +70,19 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
 # =============================================================================
 
 
-def _grad0_kernelize(k: Callable) -> Callable:
-    return kernelize(jacrev(k, argnums=0))
+def _grad0_kernelize(k: Callable, lax: bool = False) -> Callable:
+    return kernelize(jacrev(k, argnums=0), lax=lax)
 
 
-def _grad1_kernelize(k: Callable) -> Callable:
-    return kernelize(jacrev(k, argnums=1))
+def _grad1_kernelize(k: Callable, lax: bool = False) -> Callable:
+    return kernelize(jacrev(k, argnums=1), lax=lax)
 
 
-def _grad01_kernelize(k: Callable) -> Callable:
-    return kernelize(jacfwd(jacrev(k, argnums=0), argnums=1))
+def _grad01_kernelize(k: Callable, lax: bool = True) -> Callable:
+    return kernelize(jacfwd(jacrev(k, argnums=0), argnums=1), lax=lax)
 
 
-def grad0_kernelize(k: Callable) -> Callable:
+def grad0_kernelize(k: Callable, lax: bool = True) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d/d0(k) = cov(w, y) with y = f(x) and w = d/dx(f)(x).
@@ -89,7 +90,7 @@ def grad0_kernelize(k: Callable) -> Callable:
     Returns:
     d0_kernel: derivative kernel with respect to the first argument
     """
-    d0k = _grad0_kernelize(k)
+    d0k = _grad0_kernelize(k, lax=lax)
 
     def wrapper(x1, x2, params, jacobian):
         """Derivative kernel with respect to the first argument.
@@ -111,7 +112,7 @@ def grad0_kernelize(k: Callable) -> Callable:
     return wrapper
 
 
-def grad1_kernelize(k: Callable) -> Callable:
+def grad1_kernelize(k: Callable, lax: bool = True) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d/d1(k) = cov(y, w) with y = f(x) and w = d/dx(f)(x).
@@ -119,7 +120,7 @@ def grad1_kernelize(k: Callable) -> Callable:
     Returns:
     d1_kernel: derivative kernel with respect to the second argument
     """
-    d1k = _grad1_kernelize(k)
+    d1k = _grad1_kernelize(k, lax=lax)
 
     def wrapper(x1, x2, params, jacobian):
         """Derivative kernel with respect to the second argument.
@@ -136,7 +137,7 @@ def grad1_kernelize(k: Callable) -> Callable:
     return wrapper
 
 
-def grad01_kernelize(k: Callable) -> Callable:
+def grad01_kernelize(k: Callable, lax: bool = True) -> Callable:
     """Kernelizes the kernel k and makes a derivative kernel
 
     d^2/d0d1(k) = cov(w, w) with y = f(x) and w = d/dx(f)(x).
@@ -145,7 +146,7 @@ def grad01_kernelize(k: Callable) -> Callable:
     d0d1_kernel: derivative kernel with respect to the first and
                  second argument
     """
-    d01k = _grad01_kernelize(k)
+    d01k = _grad01_kernelize(k, lax=lax)
 
     def wrapper(x1, x2, params, jacobian):
         # n, m, d = x1.shape[0], x2.shape[0], x1.shape[1]
@@ -161,18 +162,18 @@ def grad01_kernelize(k: Callable) -> Callable:
     return wrapper
 
 
-def grad_kernelize(argnums: Union[int, Tuple[int, int]]) -> Callable:
+def grad_kernelize(argnums: Union[int, Tuple[int, int]], lax: bool = True) -> Callable:
     """Kernelizes the input kernel with respect to the dimension
     specified in argnums.
 
     Only argnums == 0, 1, (0, 1) is available.
     """
     if argnums == 0:
-        return grad0_kernelize
+        return partial(grad0_kernelize, lax=lax)
     elif argnums == 1:
-        return grad1_kernelize
+        return partial(grad1_kernelize, lax=lax)
     elif argnums == (0, 1):
-        return grad01_kernelize
+        return partial(grad01_kernelize, lax=lax)
     else:
         raise ValueError(
             f"argnums={argnums} is not valid. Allowed argnums: 0, 1, (0, 1)"
