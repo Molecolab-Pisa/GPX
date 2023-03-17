@@ -68,6 +68,17 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
 # =============================================================================
 # Derivative Kernel Decorator
 # =============================================================================
+# TODO: right now we have a `vmap` version of the kernelizer, and a `lax`
+#       version. The lax one is ok for big datasets. Still, it stores in memory
+#       the full derivative kernel before taking the product with the jacobian
+#       this is, in general, memory inefficient. A better way to implement this
+#       is to perform the matrix jacobian product directly inside the for loop
+#       of jax.lax. __implement this__.
+#       Maybe is ok to have a _grad0_kernelize function that yields the derivative
+#       kernel (in which case, the current shape is wrong and has to be changed)
+#       and a _grad0jacob_kernelize function that yields the derivative kernel
+#       multiplied by the jacobian, and leave to grad0_kernelize the duty to
+#       dispatch the kernelization according to a `with_jacob` boolean argument.
 
 
 def _grad0_kernelize(kernel_func: Callable, lax: bool = False) -> Callable:
