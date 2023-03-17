@@ -44,7 +44,7 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
         def kernel(x1, x2, params):
             n, _ = x1.shape
             m, _ = x2.shape
-            gram = jnp.zeros((n, m), dtype=jnp.float64)
+            gram = jnp.zeros((n, m))
 
             def update_row(i, gram):
                 def update_col(j, gram):
