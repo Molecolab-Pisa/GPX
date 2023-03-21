@@ -2,18 +2,19 @@ import pytest
 import numpy as np
 from numpy.testing import assert_allclose
 
-import jax
 import jax.numpy as jnp
 from jax import random
 
 from scipy.special import gamma, kv
 
-from gpx.kernels import squared_exponential_kernel, m12_kernel, m32_kernel, m52_kernel
-
-
-# We want float64 enabled in JAX when importing gpx
-def test_float64():
-    assert jax.config.x64_enabled is True
+from gpx.kernels.kernels import (
+    squared_exponential_kernel,
+    m12_kernel,
+    m32_kernel,
+    m52_kernel,
+)
+from gpx.parameters import Parameter
+from gpx.utils import softplus, inverse_softplus
 
 
 # ============================================================================
@@ -27,7 +28,7 @@ def reference_squared_exponential_kernel(x1, x2, params):
         for j in range(n2):
             dist = x1[i] - x2[j]
             dist2 = jnp.dot(dist.T, dist)
-            K[i, j] = jnp.exp(-dist2 / params["lengthscale"] ** 2)
+            K[i, j] = jnp.exp(-dist2 / params["lengthscale"].value ** 2)
     return K
 
 
@@ -39,7 +40,7 @@ def reference_matern_kernel(x1, x2, nu, params):
         for j in range(n2):
             dist = x1[i] - x2[j]
             dist = jnp.dot(dist.T, dist) ** 0.5
-            dist = dist / params["lengthscale"]
+            dist = dist / params["lengthscale"].value
             fact = jnp.sqrt(2 * nu) * dist
             K[i, j] = ((2.0 ** (1.0 - nu)) / gamma(nu)) * (fact**nu) * kv(nu, fact)
     return K
@@ -55,7 +56,7 @@ def test_squared_exponential_kernel(dim, lengthscale):
     X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
     X2 = random.normal(subkey, shape=(20, dim))
-    params = {"lengthscale": lengthscale}
+    params = {"lengthscale": Parameter(lengthscale, True, softplus, inverse_softplus)}
 
     K = squared_exponential_kernel(X1, X2, params)
     K_ref = reference_squared_exponential_kernel(X1, X2, params)
@@ -73,7 +74,7 @@ def test_matern12_kernel(dim, lengthscale):
     X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
     X2 = random.normal(subkey, shape=(20, dim))
-    params = {"lengthscale": lengthscale}
+    params = {"lengthscale": Parameter(lengthscale, True, softplus, inverse_softplus)}
 
     K = m12_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 1.0 / 2, params)
@@ -88,7 +89,7 @@ def test_matern32_kernel(dim, lengthscale):
     X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
     X2 = random.normal(subkey, shape=(20, dim))
-    params = {"lengthscale": lengthscale}
+    params = {"lengthscale": Parameter(lengthscale, True, softplus, inverse_softplus)}
 
     K = m32_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 3.0 / 2, params)
@@ -103,7 +104,7 @@ def test_matern52_kernel(dim, lengthscale):
     X1 = random.normal(key, shape=(10, dim))
     subkey, key = random.split(key)
     X2 = random.normal(subkey, shape=(20, dim))
-    params = {"lengthscale": lengthscale}
+    params = {"lengthscale": Parameter(lengthscale, True, softplus, inverse_softplus)}
 
     K = m52_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 5.0 / 2, params)

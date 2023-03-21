@@ -89,7 +89,7 @@ def _matern32_kernel_base(
 def matern32_kernel_base(
     x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
 ) -> jnp.ndarray:
-    lengthscale = params["lengthscale"]
+    lengthscale = params["lengthscale"].value
     return _matern32_kernel_base(x1, x2, lengthscale)
 
 
@@ -114,7 +114,7 @@ def _matern52_kernel_base(
 def matern52_kernel_base(
     x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
 ) -> jnp.ndarray:
-    lengthscale = params["lengthscale"]
+    lengthscale = params["lengthscale"].value
     return _matern52_kernel_base(x1, x2, lengthscale)
 
 
