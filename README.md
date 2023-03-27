@@ -10,10 +10,10 @@ An environment with python 3.10 is recommended. You can create it with `conda`, 
 
 For example, with conda run the following code:
 
-```python
+```shell
 conda create -n gpx-env python=3.10
 ```
-```python
+```shell
 conda activate gpx-env
 ```
 
@@ -25,17 +25,17 @@ In order to install JAX with GPU support you must have CUDA and CuDNN installed.
 CUDA 11 is required (available on gpumachine, molimen6, molimen7). 
 You can install CuDNN with:
 
-```python
+```shell
 conda install -c conda-forge cudnn=8.4
 ```
 
 Then run:
 
-```python
+```shell
 pip install --upgrade pip
 ```
 
-```python
+```shell
 pip install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
@@ -49,7 +49,7 @@ For instance, if you want to run on GPU, see the previous section.
 
 To clone the GPX module, run:
 
-```python
+```shell
 git clone git@molimen1.dcci.unipi.it:molecolab/gpx.git
 ```
 
@@ -57,7 +57,7 @@ This will create the `gpx` repository.
 
 From the `gpx` folder, you can install the module with pip:
 
-```python
+```shell
 pip install .
 ```
 
@@ -66,7 +66,7 @@ pip install .
 It is recommended to fork this repository and clone the "forked" one as `origin`. The `upstream` version
 can be added by running the following code:
 
-```python
+```shell
 git remote add upstream git@molimen1.dcci.unipi.it:molecolab/gpx.git
 ```
 
@@ -74,7 +74,7 @@ More details on [configuring a remote repository for a fork](https://docs.github
 
 You can install it locally with:
 
-```python
+```shell
 pip install -e .
 ```
 
@@ -88,7 +88,7 @@ You may want to look at the examples.
 We recommend making changes in a branch of your local version. 
 Make sure that your main branch is up to date with the upstream:
 
-```python
+```shell
 git pull upstream main
 ```
 
@@ -100,7 +100,7 @@ happy. We use `pytest` to write our tests.
 
 To run all the tests you can use `tox` (`pip install tox` if you don't have it).
 
-```python
+```shell
 tox -e tests
 ```
 
