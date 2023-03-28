@@ -1,18 +1,17 @@
 from __future__ import annotations
-from typing import Callable, Dict, Tuple
-from typing_extensions import Self
 
 from functools import partial
+from typing import Callable, Dict, Tuple
 
 import jax.numpy as jnp
-from jax import jit
-from jax import random
+from jax import jit, random
 from jax._src import prng
+from typing_extensions import Self
 
-from ..utils import identity, softplus, inverse_softplus
-from ..parameters import ModelState
-from ..parameters.parameter import parse_param, Parameter
 from ..optimize import scipy_minimize
+from ..parameters import ModelState
+from ..parameters.parameter import Parameter, parse_param
+from ..utils import identity, inverse_softplus, softplus
 
 
 @partial(jit, static_argnums=[3, 4])
@@ -102,12 +101,14 @@ def init(
 ) -> ModelState:
     if not callable(kernel):
         raise RuntimeError(
-            f"kernel must be provided as a callable function, you provided {type(kernel)}"
+            f"kernel must be provided as a callable function, you provided"
+            f" {type(kernel)}"
         )
 
     if not isinstance(kernel_params, dict):
         raise RuntimeError(
-            f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
+            f"kernel_params must be provided as a dictionary, you provided"
+            f" {type(kernel_params)}"
         )
 
     inducing_points = parse_param(inducing_points)
@@ -188,8 +189,8 @@ class RadialBasisFunctionNetwork:
             alpha: regularization parameter of the L2 regularization term in the
                    default loss function. If another loss is used, alpha is ignored.
             loss_fn: loss function used to optimize the model parameters.
-                     by default, it minimizes the squared error plus the L2 regularization
-                     term.
+                     by default, it minimizes the squared error plus the L2
+                     regularization term.
         """
         self.key = key
         self.kernel = kernel

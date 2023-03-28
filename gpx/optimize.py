@@ -1,16 +1,15 @@
 from __future__ import annotations
-from typing import Tuple, Callable
 
-from .parameters.model_state import ModelState
+from typing import Callable, Tuple
 
-from jax.tree_util import tree_flatten, tree_unflatten
-from jax.flatten_util import ravel_pytree
-from jax import grad, jit
 import jax.numpy as jnp
-
+from jax import grad, jit
+from jax.flatten_util import ravel_pytree
+from jax.tree_util import tree_flatten, tree_unflatten
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
 
+from .parameters.model_state import ModelState
 
 # ============================================================================
 # Scipy Optimizer interface

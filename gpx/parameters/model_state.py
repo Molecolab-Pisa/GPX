@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import Dict, Callable, List, Optional, Tuple, Any
 
-from .utils import _recursive_traverse_dict
-from .parameter import Parameter
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-
 import numpy as np
 from tabulate import tabulate
+
+from .parameter import Parameter
+from .utils import _recursive_traverse_dict
 
 
 @jax.tree_util.register_pytree_node_class

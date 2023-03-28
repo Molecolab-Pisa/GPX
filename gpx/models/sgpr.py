@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional, Tuple
-from typing_extensions import Self
-
 from functools import partial
-
-from ..parameters.model_state import ModelState
-from ..parameters.parameter import Parameter, parse_param
-from ..optimize import scipy_minimize
-from .utils import sample
+from typing import Callable, Dict, Optional, Tuple
 
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import jit
 from jax._src import prng
+from typing_extensions import Self
 
+from ..optimize import scipy_minimize
+from ..parameters.model_state import ModelState
+from ..parameters.parameter import Parameter, parse_param
+from .utils import sample
 
 # =============================================================================
 # Sparse Gaussian Process Regression: functions
@@ -284,12 +282,14 @@ def init(
     """
     if not callable(kernel):
         raise RuntimeError(
-            f"kernel must be provided as a callable function, you provided {type(kernel)}"
+            f"kernel must be provided as a callable function, you provided"
+            f" {type(kernel)}"
         )
 
     if not isinstance(kernel_params, dict):
         raise RuntimeError(
-            f"kernel_params must be provided as a dictionary, you provided {type(kernel_params)}"
+            f"kernel_params must be provided as a dictionary, you provided"
+            f" {type(kernel_params)}"
         )
 
     kp = {}

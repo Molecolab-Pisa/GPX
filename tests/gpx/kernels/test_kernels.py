@@ -1,20 +1,18 @@
-import pytest
-import numpy as np
-from numpy.testing import assert_allclose
-
 import jax.numpy as jnp
+import numpy as np
+import pytest
 from jax import random
-
+from numpy.testing import assert_allclose
 from scipy.special import gamma, kv
 
 from gpx.kernels.kernels import (
-    squared_exponential_kernel,
     m12_kernel,
     m32_kernel,
     m52_kernel,
+    squared_exponential_kernel,
 )
 from gpx.parameters import Parameter
-from gpx.utils import softplus, inverse_softplus
+from gpx.utils import inverse_softplus, softplus
 
 
 # ============================================================================

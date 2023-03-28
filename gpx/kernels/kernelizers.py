@@ -1,12 +1,12 @@
 from __future__ import annotations
-from typing import Callable, Tuple, Union
 
 import functools
 from functools import partial
+from typing import Callable, Tuple, Union
+
 import jax
 import jax.numpy as jnp
-from jax import vmap, jit, jacrev, jacfwd
-
+from jax import jacfwd, jacrev, jit, vmap
 
 # =============================================================================
 # Kernel Decorator

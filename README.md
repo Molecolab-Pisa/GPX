@@ -106,6 +106,18 @@ tox -e tests
 
 It is recommended to run the tests before pushing your changes to the upstream repository.
 
-We also use some pre-commit hooks, to format the code (with `black`) and to immediately catch plain
-errors and bad practices (with `flake8`). To install the `pre-commit` hooks, follow the instructions
-in the `.pre-commit-config.yaml` file.
+We also use some pre-commit hooks, to format the code (with `black` and `isort`) and to immediately
+catch plain errors and bad practices (with `flake8`). To install the `pre-commit` hooks, follow
+the instructions in the `.pre-commit-config.yaml` file.
+
+You can check for code quality with tox, typing:
+
+```shell
+tox -e lint
+```
+
+If you want to manually format the code using `black` and `isort`, you can also type:
+
+```shell
+tox -e format
+```

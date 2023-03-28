@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Dict, Generator
 
 import jax.numpy as jnp

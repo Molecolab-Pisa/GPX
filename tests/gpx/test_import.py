@@ -1,5 +1,6 @@
-import pytest  # noqa
 import jax
+import pytest  # noqa
+
 import gpx  # noqa
 
 

@@ -7,3 +7,4 @@ __pycache__/
 *.so
 dev_notebooks/
 TODO.md
+.tox/

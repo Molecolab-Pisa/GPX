@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Any, Tuple, Callable, Union
+
+from typing import Any, Callable, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -21,7 +22,10 @@ class Parameter:
 
     def __repr__(self) -> str:
         name = self.__class__.__name__
-        return f"{name}(value={self.value}, trainable={self.trainable}, forward_transform={self.forward_transform}, backward_transform={self.backward_transform})"
+        reprstr = f"{name}(value={self.value}, trainable={self.trainable}"
+        reprstr += f", forward_transform={self.forward_transform}"
+        reprstr += f", backward_transform={self.backward_transform})"
+        return reprstr
 
     def tree_flatten(self) -> Tuple[jnp.ndarray, Any]:
         children = (self.value,)
@@ -34,7 +38,9 @@ class Parameter:
 
 
 def parse_param(param: Tuple[jnp.ndarray, bool, Callable, Callable]) -> Parameter:
-    errmsg = "Provide each parameter as a 4-tuple (value: float|jax.jnp.ndarray, trainable: bool, forward: callable, backward: callable)"
+    errmsg = "Provide each parameter as a 4-tuple"
+    errmsg += " (value: float|jax.jnp.ndarray, trainable: bool,"
+    errmsg += " forward: callable, backward: callable)"
     try:
         value, trainable, forward, backward = param
     except TypeError as e:

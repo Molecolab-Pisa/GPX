@@ -3,10 +3,9 @@ from typing import Dict
 import jax.numpy as jnp
 from jax import jit
 
-from .kernelizers import kernelize
-from ..utils import squared_distances
 from ..parameters.parameter import Parameter
-
+from ..utils import squared_distances
+from .kernelizers import kernelize
 
 # =============================================================================
 # Squared Exponential Kernel
