@@ -1,3 +1,6 @@
+<div align="center">
+<img src="images/GPX_logo_250px.png" alt="logo"></img>
+</div>
 
 # GPX
 
