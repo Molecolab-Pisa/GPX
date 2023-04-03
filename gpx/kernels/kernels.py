@@ -5,7 +5,7 @@ from jax import jit
 
 from ..parameters.parameter import Parameter
 from ..utils import euclidean_distance, squared_distances
-from .kernelizers import kernelize
+from .kernelizers import grad_kernelize, kernelize
 
 # =============================================================================
 # Squared Exponential Kernel
@@ -129,3 +129,101 @@ rbf_kernel = squared_exponential_kernel
 m12_kernel = matern12_kernel
 m32_kernel = matern32_kernel
 m52_kernel = matern52_kernel
+
+
+# =============================================================================
+# Classes
+# =============================================================================
+
+
+class Kernel:
+    """base class representing a kernel
+
+    This class is a thin wrapper around kernel function.
+    In principle, to implement a fully working kernel with
+    the minimum effort: (i) define a `kernel_base` function,
+    which computes the kernel between **two** samples (i.e., not
+    on batches of data). (2) write the corresponding kernel
+    class that inherits from this class, and that calls
+    super().__init__() **after** specifying the base kernel, e.g.:
+
+    >>> def my_custom_kernel_base(x1: jnp.ndarray, x2: jnp.ndarray, params: Dict):
+    ...     # write your implementation here
+    >>>
+    >>> class MyCustomKernel(Kernel):
+    ...     def __init__(self):
+    ...         self._kernel_base = my_custom_kernel_base
+    ...         super().__init__()
+
+    Classes defined in this way will have automatically defined
+    the following operations working for batches of samples,
+    in the form of callables:
+    *   kernel function (self.k)
+    *   derivative kernel wrt first argument (self.d0k)
+    *   derivative kernel wrt second argument (self.d1k)
+    *   hessian kernel (self.d01k)
+    *   derivative kernel - jacobian product wrt first argument (self.d0kj)
+    *   derivative kernel - jacobian product wrt second argument (self.d1kj)
+    *   hessian kernel - jacobian product (self.d01kj)
+
+    In addition, calling the class will evaluate the kernel function, i.e.,
+    it is equivalent of calling `self.k`.
+
+    If you have an implementation of some of these functions that you want
+    to use instead of the default one, simply define it after initializing
+    the parent class:
+
+    >>> def my_custom_kernel_base(x1: jnp.ndarray, x2: jnp.ndarray, params: Dict):
+    ...     # write your implementation here
+    >>>
+    >>> class MyCustomKernel(Kernel):
+    ...     def __init__(self):
+    ...         self._kernel_base = my_custom_kernel_base
+    ...         super().__init__()
+    ...         # use a custom faster version for evaluating the kernel and the hessian
+    ...         self.k = my_custom_faster_kernel
+    ...         self.d01k = my_custom_faster_hessian_kernel
+    """
+
+    def __init__(self) -> None:
+        # kernel
+        self.k = kernelize(self._kernel_base)
+
+        # derivative/hessian kernel
+        self.d0k = grad_kernelize(argnums=0, with_jacob=False)(self._kernel_base)
+        self.d1k = grad_kernelize(argnums=1, with_jacob=False)(self._kernel_base)
+        self.d01k = grad_kernelize(argnums=(0, 1), with_jacob=False)(self._kernel_base)
+
+        # derivative/hessian kernel-jacobian products
+        self.d0kj = grad_kernelize(argnums=0, with_jacob=True)(self._kernel_base)
+        self.d1kj = grad_kernelize(argnums=1, with_jacob=True)(self._kernel_base)
+        self.d01kj = grad_kernelize(argnums=(0, 1), with_jacob=True)(self._kernel_base)
+
+    def __call__(self, x1: jnp.ndarray, x2: jnp.ndarray, params: Dict) -> jnp.ndarray:
+        return self.k(x1, x2, params)
+
+
+class SquaredExponential(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = squared_exponential_kernel_base
+        super().__init__()
+        # faster version for evaluating k
+        self.k = squared_exponential_kernel
+
+
+class Matern12(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = matern12_kernel_base
+        super().__init__()
+
+
+class Matern32(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = matern32_kernel_base
+        super().__init__()
+
+
+class Matern52(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = matern52_kernel_base
+        super().__init__()

@@ -1,4 +1,8 @@
 from .kernels import (
+    Matern12,
+    Matern32,
+    Matern52,
+    SquaredExponential,
     m12_kernel,
     m32_kernel,
     m52_kernel,
