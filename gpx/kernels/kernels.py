@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from jax import jit
 
 from ..parameters.parameter import Parameter
-from ..utils import squared_distances
+from ..utils import euclidean_distance, squared_distances
 from .kernelizers import kernelize
 
 # =============================================================================
@@ -55,7 +55,7 @@ def _matern12_kernel_base(
 ) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = jnp.sqrt(jnp.sum((z1 - z2) ** 2))
+    d = euclidean_distance(z1, z2)
     return jnp.exp(-d)
 
 
@@ -80,7 +80,7 @@ def _matern32_kernel_base(
 ) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = jnp.sqrt(3.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
+    d = jnp.sqrt(3.0) * euclidean_distance(z1, z2)
     return (1.0 + d) * jnp.exp(-d)
 
 
@@ -105,7 +105,7 @@ def _matern52_kernel_base(
 ) -> jnp.ndarray:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = jnp.sqrt(5.0) * jnp.sqrt(jnp.sum((z1 - z2) ** 2))
+    d = jnp.sqrt(5.0) * euclidean_distance(z1, z2)
     return (1.0 + d + d**2 / 3.0) * jnp.exp(-d)
 
 

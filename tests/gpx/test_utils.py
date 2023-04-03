@@ -1,8 +1,42 @@
 import jax.numpy as jnp
 import pytest
+from jax import grad
 from numpy.testing import assert_equal
 
-from gpx.utils import identity, inverse_softplus, softplus
+from gpx.utils import euclidean_distance, identity, inverse_softplus, softplus
+
+# ============================================================================
+# Metrics
+# ============================================================================
+
+
+def naive_euclidean_distance(x1, x2):
+    return jnp.sum((x1 - x2) ** 2) ** 0.5
+
+
+@pytest.mark.parametrize("a", [-1e4, 0.0, 1e4])
+@pytest.mark.parametrize("b", [-1e4, 0.0, 1e3])
+def test_correct_value(a, b):
+    a = jnp.asarray(a)
+    b = jnp.asarray(b)
+    out1 = euclidean_distance(a, b)
+    out2 = naive_euclidean_distance(a, b)
+    assert_equal(out1, out2)
+
+
+def test_safe_gradient():
+    """
+    euclidean_distance should be an implementation
+    that yields finite gradients when computed with
+    equal points (important, e.g., to ensure that
+    derivatives of matern kernels are well-defined)
+    """
+    grad1_func = grad(euclidean_distance)
+    grad2_func = grad(naive_euclidean_distance)
+    x = jnp.array([1.0]).reshape(1, -1)
+    assert jnp.isfinite(grad1_func(x, x))
+    assert jnp.isnan(grad2_func(x, x))
+
 
 # ============================================================================
 # Bijectors tests
