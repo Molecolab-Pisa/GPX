@@ -37,7 +37,7 @@ install_gpx:
     stage: install
     image: $IMAGE_TAG:latest
     script:
-        - source venv/bin/activate
+        - source /usr/src/app/venv/bin/activate
         - pip3 install numpy tabulate typing_extensions "jax[cpu]"
         - pip3 install .
 
@@ -46,7 +46,7 @@ run_tests:
     stage: test
     image: $IMAGE_TAG:latest
     script:
-        - source venv/bin/activate
+        - source /usr/src/app/venv/bin/activate
         - pip3 install tox
         - tox -e tests
 
@@ -55,6 +55,6 @@ run_lint:
     stage: lint
     image: $IMAGE_TAG:latest
     script:
-        - source venv/bin/activate
+        - source /usr/src/app/venv/bin/activate
         - pip3 install tox
         - tox -e lint
