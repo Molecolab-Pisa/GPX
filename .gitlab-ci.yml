@@ -1,0 +1,60 @@
+stages:
+    - docker-build
+    - install
+    - lint
+    - test
+
+variables:
+  IMAGE_TAG: $CI_REGISTRY_IMAGE
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+   
+# Pip's cache doesn't store the python packages
+# https://pip.pypa.io/en/stable/topics/caching/
+#
+# If you want to also cache the installed packages, you have to install
+# them in a virtualenv and cache it as well.
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+
+build_docker_env:
+    stage: docker-build
+    image: docker:git
+    script:
+        - docker login -u $CI_REGISTRY_USER -p $CI_BUILD_TOKEN $CI_REGISTRY
+        - docker build --load -t $IMAGE_TAG .
+        - docker push $IMAGE_TAG
+    only:
+        refs:
+            - pushes
+        changes:
+            - Dockerfile
+
+
+install_gpx:
+    stage: install
+    image: $IMAGE_TAG:latest
+    script:
+        - source venv/bin/activate
+        - pip3 install numpy tabulate typing_extensions "jax[cpu]"
+        - pip3 install .
+
+
+run_tests:
+    stage: test
+    image: $IMAGE_TAG:latest
+    script:
+        - source venv/bin/activate
+        - pip3 install tox
+        - tox -e tests
+
+
+run_lint:
+    stage: lint
+    image: $IMAGE_TAG:latest
+    script:
+        - source venv/bin/activate
+        - pip3 install tox
+        - tox -e lint
