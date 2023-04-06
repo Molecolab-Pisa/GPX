@@ -4,8 +4,9 @@ from functools import partial
 from typing import Callable, Dict, Tuple
 
 import jax.numpy as jnp
-from jax import jit, random
+from jax import Array, jit, random
 from jax._src import prng
+from jax.typing import ArrayLike
 from typing_extensions import Self
 
 from ..optimize import scipy_minimize
@@ -17,11 +18,11 @@ from ..utils import identity, inverse_softplus, softplus
 @partial(jit, static_argnums=[3, 4])
 def _train_loss(
     params: Dict[str, Parameter],
-    x: jnp.ndarray,
-    y: jnp.ndarray,
+    x: ArrayLike,
+    y: ArrayLike,
     kernel: Callable,
     output_layer: Callable,
-) -> jnp.ndarray:
+) -> Array:
     y_pred = _predict(params=params, x=x, kernel=kernel, output_layer=output_layer)
 
     alpha = params["alpha"].value
@@ -34,7 +35,7 @@ def _train_loss(
     )
 
 
-def train_loss(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
+def train_loss(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
     return _train_loss(
         params=state.params,
         x=x,
@@ -46,8 +47,8 @@ def train_loss(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray
 
 @partial(jit, static_argnums=[2])
 def _predict_linear(
-    params: Dict[str, Parameter], x: jnp.ndarray, kernel: Callable
-) -> jnp.ndarray:
+    params: Dict[str, Parameter], x: ArrayLike, kernel: Callable
+) -> Array:
     kernel_params = params["kernel_params"]
     weights = params["weights"].value
     x_inducing = params["inducing_points"].value
@@ -61,19 +62,17 @@ def _predict_linear(
 @partial(jit, static_argnums=[2, 3])
 def _predict(
     params: Dict[str, Parameter],
-    x: jnp.ndarray,
+    x: ArrayLike,
     kernel: Callable,
     output_layer: Callable,
-) -> jnp.ndarray:
+) -> Array:
     pred = _predict_linear(params=params, x=x, kernel=kernel)
     pred = output_layer(pred)
 
     return pred
 
 
-def predict(
-    state: ModelState, x: jnp.ndarray, linear_only: bool = False
-) -> jnp.ndarray:
+def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array:
     if linear_only:
         return _predict_linear(
             params=state.params,
@@ -183,9 +182,9 @@ class RadialBasisFunctionNetwork:
             num_output: number of outputs of the RBF layer.
             output_layer: output_layer, taking as input the prediction of the RBF
                           layer, and outputting a transformed prediction.
-                          should accept a jnp.ndarray with shape (n, num_output),
+                          should accept a ArrayLike with shape (n, num_output),
                           where n is the number of samples, and should output another
-                          jnp.ndarray of shape (n, num_output')
+                          ArrayLike of shape (n, num_output')
             alpha: regularization parameter of the L2 regularization term in the
                    default loss function. If another loss is used, alpha is ignored.
             loss_fn: loss function used to optimize the model parameters.
@@ -215,14 +214,14 @@ class RadialBasisFunctionNetwork:
         "prints the model parameters"
         return self.state.print_params()
 
-    def fit(self, x: jnp.ndarray, y: jnp.ndarray) -> Self:
+    def fit(self, x: ArrayLike, y: ArrayLike) -> Self:
         self.state, optres = scipy_minimize(
             self.state, x=x, y=y, loss_fn=self.state.loss_fn
         )
         self.optimize_results_ = optres
         self.x_train = x
 
-    def predict(self, x: jnp.ndarray, linear_only: bool = False) -> jnp.ndarray:
+    def predict(self, x: ArrayLike, linear_only: bool = False) -> Array:
         return predict(self.state, x=x, linear_only=linear_only)
 
 

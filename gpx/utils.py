@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
-from jax import jit
+from jax import Array, jit
+from jax.typing import ArrayLike
 
 # =============================================================================
 # Operations
@@ -9,7 +10,7 @@ from jax import jit
 
 
 @jit
-def euclidean_distance(x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
+def euclidean_distance(x1: ArrayLike, x2: ArrayLike) -> Array:
     """euclidean distance
 
     Euclidean distance between two points, each of shape (1, n_feats).
@@ -37,7 +38,7 @@ def euclidean_distance(x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def squared_distances(x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
+def squared_distances(x1: ArrayLike, x2: ArrayLike) -> Array:
     """squared euclidean distances
 
     This is a memory-efficient implementation of the calculation of
@@ -62,7 +63,7 @@ def squared_distances(x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def softplus(x: jnp.ndarray) -> jnp.ndarray:
+def softplus(x: ArrayLike) -> Array:
     """softplus transformation
 
     Computes the softplus transformation of the input x
@@ -85,7 +86,7 @@ def softplus(x: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def inverse_softplus(x: jnp.ndarray) -> jnp.ndarray:
+def inverse_softplus(x: ArrayLike) -> Array:
     """inverse softplus transformation
 
     Computes the inverse of the softplus transformation
@@ -109,7 +110,7 @@ def inverse_softplus(x: jnp.ndarray) -> jnp.ndarray:
 
 
 @jit
-def identity(x: jnp.ndarray) -> jnp.ndarray:
+def identity(x: ArrayLike) -> Array:
     """identity transformation
 
     Computes the identity transformation of the input x,

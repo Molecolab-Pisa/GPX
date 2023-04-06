@@ -3,16 +3,17 @@ from __future__ import annotations
 from typing import Optional
 
 import jax.numpy as jnp
-from jax import random
+from jax import Array, random
 from jax._src import prng
+from jax.typing import ArrayLike
 
 
 def sample(
     key: prng.PRNGKeyArray,
-    mean: jnp.ndarray,
-    cov: jnp.ndarray,
+    mean: ArrayLike,
+    cov: ArrayLike,
     n_samples: Optional[int] = 1,
-) -> jnp.ndarray:
+) -> Array:
     if mean.ndim > 1:
         samples = []
         for dim in range(mean.shape[1]):

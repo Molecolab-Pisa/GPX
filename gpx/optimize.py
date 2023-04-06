@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Tuple
 
-import jax.numpy as jnp
 from jax import grad, jit
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_flatten, tree_unflatten
+from jax.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
 
@@ -17,7 +17,7 @@ from .parameters.model_state import ModelState
 
 
 def scipy_minimize(
-    state: ModelState, x: jnp.ndarray, y: jnp.ndarray, loss_fn: Callable
+    state: ModelState, x: ArrayLike, y: ArrayLike, loss_fn: Callable
 ) -> Tuple[ModelState, OptimizeResult]:
     """minimization of a loss function using SciPy's L-BFGS-B
 

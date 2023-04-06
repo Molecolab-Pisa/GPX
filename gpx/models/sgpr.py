@@ -5,8 +5,9 @@ from typing import Callable, Dict, Optional, Tuple
 
 import jax.numpy as jnp
 import jax.scipy as jsp
-from jax import jit
+from jax import Array, jit
 from jax._src import prng
+from jax.typing import ArrayLike
 from typing_extensions import Self
 
 from ..optimize import scipy_minimize
@@ -22,11 +23,11 @@ from .utils import sample
 @partial(jit, static_argnums=[3, 4])
 def _log_marginal_likelihood(
     params: Dict[str, Parameter],
-    x: jnp.ndarray,
-    y: jnp.ndarray,
+    x: ArrayLike,
+    y: ArrayLike,
     kernel: Callable,
     return_negative: Optional[bool] = False,
-) -> jnp.ndarray:
+) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
     lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
@@ -64,10 +65,10 @@ def _log_marginal_likelihood(
 
 def log_marginal_likelihood(
     state: ModelState,
-    x: jnp.ndarray,
-    y: jnp.ndarray,
+    x: ArrayLike,
+    y: ArrayLike,
     return_negative: Optional[bool] = False,
-) -> jnp.ndarray:
+) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
         lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
@@ -93,8 +94,8 @@ def log_marginal_likelihood(
 
 @partial(jit, static_argnums=[3])
 def _fit(
-    params: Dict[str, Parameter], x: jnp.ndarray, y: jnp.ndarray, kernel: Callable
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    params: Dict[str, Parameter], x: ArrayLike, y: ArrayLike, kernel: Callable
+) -> Tuple[Array, Array]:
     """fits a SGPR (projected processes)
 
     y_mean = (1/n) Σ_i y_i
@@ -120,7 +121,7 @@ def _fit(
     return c, y_mean
 
 
-def fit(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> ModelState:
+def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     """fits a SGPR (projected processes)
 
         y_mean = (1/n) Σ_i y_i
@@ -142,12 +143,12 @@ def fit(state: ModelState, x: jnp.ndarray, y: jnp.ndarray) -> ModelState:
 @partial(jit, static_argnums=[4, 5])
 def _predict(
     params: Dict[str, Parameter],
-    x: jnp.ndarray,
-    c: jnp.ndarray,
-    y_mean: jnp.ndarray,
+    x: ArrayLike,
+    c: ArrayLike,
+    y_mean: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
-) -> jnp.ndarray:
+) -> Array:
     """predicts with a SGPR (projected processes)
 
     μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
@@ -183,8 +184,8 @@ def _predict(
 
 
 def predict(
-    state: ModelState, x: jnp.ndarray, full_covariance: Optional[bool] = False
-) -> jnp.ndarray:
+    state: ModelState, x: ArrayLike, full_covariance: Optional[bool] = False
+) -> Array:
     """predicts with a SGPR (projected processes)
 
         μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
@@ -216,9 +217,9 @@ def predict(
 def sample_prior(
     key: prng.PRNGKeyArray,
     state: ModelState,
-    x: jnp.ndarray,
+    x: ArrayLike,
     n_samples: Optional[int] = 1,
-) -> jnp.ndarray:
+) -> Array:
     """samples from the prior of a SGPR (projected processes)
 
     Args:
@@ -244,9 +245,9 @@ def sample_prior(
 def sample_posterior(
     key: prng.PRNGKeyArray,
     state: ModelState,
-    x: jnp.ndarray,
+    x: ArrayLike,
     n_samples: Optional[int] = 1,
-) -> jnp.ndarray:
+) -> Array:
     """samples from a posterior of the SGPR (projected processes)
 
     Args:
@@ -338,8 +339,8 @@ class SparseGaussianProcessRegression:
         return self.state.print_params()
 
     def log_marginal_likelihood(
-        self, x: jnp.ndarray, y: jnp.ndarray, return_negative: Optional[bool] = False
-    ) -> jnp.ndarray:
+        self, x: ArrayLike, y: ArrayLike, return_negative: Optional[bool] = False
+    ) -> Array:
         """log marginal likelihood for SGPR (projected processes)
 
             lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
@@ -359,7 +360,7 @@ class SparseGaussianProcessRegression:
         )
 
     def fit(
-        self, x: jnp.ndarray, y: jnp.ndarray, minimize_lml: Optional[bool] = True
+        self, x: ArrayLike, y: ArrayLike, minimize_lml: Optional[bool] = True
     ) -> Self:
         """fits a SGPR (projected processes)
 
@@ -386,9 +387,7 @@ class SparseGaussianProcessRegression:
 
         return self
 
-    def predict(
-        self, x: jnp.ndarray, full_covariance: Optional[bool] = False
-    ) -> jnp.ndarray:
+    def predict(self, x: ArrayLike, full_covariance: Optional[bool] = False) -> Array:
         """predicts with a SGPR (projected processes)
 
             μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
@@ -410,10 +409,10 @@ class SparseGaussianProcessRegression:
     def sample(
         self,
         key: prng.PRNGKeyArray,
-        x: jnp.ndarray,
+        x: ArrayLike,
         n_samples: Optional[int] = 1,
         kind: Optional[str] = "prior",
-    ):
+    ) -> Array:
         """draws samples from a SGPR (projected processes)
 
         Args:

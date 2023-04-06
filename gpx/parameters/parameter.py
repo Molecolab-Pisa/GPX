@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Tuple, Union
+from typing import Any, Callable, Tuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+from jax import Array
+from jax.typing import ArrayLike
 
 
 @jax.tree_util.register_pytree_node_class
 class Parameter:
     def __init__(
         self,
-        value: Union[float, jnp.ndarray],
+        value: ArrayLike,
         trainable: bool,
         forward_transform: Callable,
         backward_transform: Callable,
@@ -27,17 +30,17 @@ class Parameter:
         reprstr += f", backward_transform={self.backward_transform})"
         return reprstr
 
-    def tree_flatten(self) -> Tuple[jnp.ndarray, Any]:
+    def tree_flatten(self) -> Tuple[Array, Any]:
         children = (self.value,)
         aux_data = (self.trainable, self.forward_transform, self.backward_transform)
         return children, aux_data
 
     @classmethod
-    def tree_unflatten(cls, aux_data: Any, children: jnp.ndarray) -> "Parameter":
+    def tree_unflatten(cls, aux_data: Any, children: ArrayLike) -> "Parameter":
         return cls(*children, *aux_data)
 
 
-def parse_param(param: Tuple[jnp.ndarray, bool, Callable, Callable]) -> Parameter:
+def parse_param(param: Tuple[ArrayLike, bool, Callable, Callable]) -> Parameter:
     errmsg = "Provide each parameter as a 4-tuple"
     errmsg += " (value: float|jax.jnp.ndarray, trainable: bool,"
     errmsg += " forward: callable, backward: callable)"
@@ -46,17 +49,17 @@ def parse_param(param: Tuple[jnp.ndarray, bool, Callable, Callable]) -> Paramete
     except TypeError as e:
         raise TypeError(f"{e}. {errmsg}") from None
 
-    if not isinstance(value, float) and not isinstance(value, jnp.ndarray):
-        raise RuntimeError(f"You provided value as {type(value)}. {errmsg}")
+    if not (isinstance(value, (np.ndarray, Array)) or np.isscalar(value)):
+        raise TypeError(f"Expected arraylike input, got {value}. {errmsg}")
 
     if not isinstance(trainable, bool):
-        raise RuntimeError(f"You provided trainable as {type(trainable)}. {errmsg}")
+        raise TypeError(f"Expected boolean input, got {trainable}. {errmsg}")
 
     if not callable(forward):
-        raise RuntimeError(f"You provided forward as {type(forward)}. {errmsg}")
+        raise TypeError(f"Expected callable input, got {forward}. {errmsg}")
 
     if not callable(backward):
-        raise RuntimeError(f"You provided backward as {type(backward)}. {errmsg}")
+        raise TypeError(f"Expected callable input, got {backward}. {errmsg}")
 
     return Parameter(
         value=value,

@@ -1,7 +1,8 @@
 from typing import Dict
 
 import jax.numpy as jnp
-from jax import jit
+from jax import Array, jit
+from jax.typing import ArrayLike
 
 from ..parameters.parameter import Parameter
 from ..utils import euclidean_distance, squared_distances
@@ -13,8 +14,8 @@ from .kernelizers import grad_kernelize, kernelize
 
 
 def _squared_exponential_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, lengthscale: float
+) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     return jnp.exp(-jnp.sum((z1 - z2) ** 2))
@@ -22,15 +23,15 @@ def _squared_exponential_kernel_base(
 
 @jit
 def squared_exponential_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
     lengthscale = params["lengthscale"].value
     return _squared_exponential_kernel_base(x1, x2, lengthscale)
 
 
 def _squared_exponential_kernel(
-    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, lengthscale: float
+) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
@@ -39,8 +40,8 @@ def _squared_exponential_kernel(
 
 @jit
 def squared_exponential_kernel(
-    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
     lengthscale = params["lengthscale"].value
     return _squared_exponential_kernel(x1, x2, lengthscale)
 
@@ -50,9 +51,7 @@ def squared_exponential_kernel(
 # =============================================================================
 
 
-def _matern12_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
-) -> jnp.ndarray:
+def _matern12_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = euclidean_distance(z1, z2)
@@ -61,8 +60,8 @@ def _matern12_kernel_base(
 
 @jit
 def matern12_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
     lengthscale = params["lengthscale"].value
     return _matern12_kernel_base(x1, x2, lengthscale)
 
@@ -75,9 +74,7 @@ matern12_kernel = kernelize(matern12_kernel_base)
 # =============================================================================
 
 
-def _matern32_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
-) -> jnp.ndarray:
+def _matern32_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(3.0) * euclidean_distance(z1, z2)
@@ -86,8 +83,8 @@ def _matern32_kernel_base(
 
 @jit
 def matern32_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
     lengthscale = params["lengthscale"].value
     return _matern32_kernel_base(x1, x2, lengthscale)
 
@@ -100,9 +97,7 @@ matern32_kernel = kernelize(matern32_kernel_base)
 # =============================================================================
 
 
-def _matern52_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, lengthscale: float
-) -> jnp.ndarray:
+def _matern52_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(5.0) * euclidean_distance(z1, z2)
@@ -111,8 +106,8 @@ def _matern52_kernel_base(
 
 @jit
 def matern52_kernel_base(
-    x1: jnp.ndarray, x2: jnp.ndarray, params: Dict[str, Parameter]
-) -> jnp.ndarray:
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
     lengthscale = params["lengthscale"].value
     return _matern52_kernel_base(x1, x2, lengthscale)
 
@@ -147,7 +142,7 @@ class Kernel:
     class that inherits from this class, and that calls
     super().__init__() **after** specifying the base kernel, e.g.:
 
-    >>> def my_custom_kernel_base(x1: jnp.ndarray, x2: jnp.ndarray, params: Dict):
+    >>> def my_custom_kernel_base(x1: ArrayLike, x2: ArrayLike, params: Dict):
     ...     # write your implementation here
     >>>
     >>> class MyCustomKernel(Kernel):
@@ -173,7 +168,7 @@ class Kernel:
     to use instead of the default one, simply define it after initializing
     the parent class:
 
-    >>> def my_custom_kernel_base(x1: jnp.ndarray, x2: jnp.ndarray, params: Dict):
+    >>> def my_custom_kernel_base(x1: ArrayLike, x2: ArrayLike, params: Dict):
     ...     # write your implementation here
     >>>
     >>> class MyCustomKernel(Kernel):
@@ -199,7 +194,7 @@ class Kernel:
         self.d1kj = grad_kernelize(argnums=1, with_jacob=True)(self._kernel_base)
         self.d01kj = grad_kernelize(argnums=(0, 1), with_jacob=True)(self._kernel_base)
 
-    def __call__(self, x1: jnp.ndarray, x2: jnp.ndarray, params: Dict) -> jnp.ndarray:
+    def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
         return self.k(x1, x2, params)
 
 
