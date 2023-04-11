@@ -408,6 +408,15 @@ class GaussianProcessRegression:
                 f"kind can be either 'prior' or 'posterior', you provided {kind}"
             )
 
+    def save(self, state_file: str) -> Dict:
+        """saves the model state values to file"""
+        return self.state.save(state_file)
+
+    def load(self, state_file: str) -> Self:
+        """loads the model state values from file"""
+        self.state = self.state.load(state_file)
+        return self
+
 
 # Alias
 GPR = GaussianProcessRegression

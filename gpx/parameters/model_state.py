@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax.typing import ArrayLike
 from tabulate import tabulate
 
 from .parameter import Parameter
-from .utils import _recursive_traverse_dict
+from .utils import _is_numeric, _recursive_traverse_dict
 
 
 @jax.tree_util.register_pytree_node_class
@@ -22,6 +23,8 @@ class ModelState:
 
         self._register = []
         for name, value in kwargs.items():
+            if _is_numeric(value):
+                value = jnp.asarray(value)
             setattr(self, name, value)
             self._register_entry(name)
 
@@ -168,3 +171,111 @@ class ModelState:
 
         with np.printoptions(edgeitems=0):
             print(tabulate(fields, headers=headers, tablefmt=tablefmt))
+
+    def save(self, state_file: str) -> Dict:
+        """Saves the state values to file
+
+        Saves the state values to a file "state_file".
+        Note that this functions only saves the values of
+        the Parameter instances that are stored in the model state.
+
+        Auxiliary data stored in the model state is saved as a
+        numpy array if possible. Otherwise, an exception is raised.
+
+        Args:
+            state_file: path to the output state file.
+        Returns:
+            saved_dict: dictionary of values saved to state_file.
+        """
+        # Get the parameters
+        params = self.params.copy()
+
+        # Distinguish between kernel parameters and other parameters
+        # everything here must be an instance of the Parameter class
+        # Prepend "params:" or "params:kernel_params:" to identify
+        # these as parameters in the saved dictionary
+        kernel_params = params.pop("kernel_params")
+        kernel_params = {
+            "params:kernel_params:" + name: value.value
+            for name, value in kernel_params.items()
+        }
+        params = {"params:" + name: value.value for name, value in params.items()}
+
+        # Join
+        params |= kernel_params
+
+        # Get the auxiliary attributes
+        for opt in self._register:
+            params[opt] = getattr(self, opt)
+
+        # Dump
+        np.savez(state_file, **params)
+
+        return params
+
+    def load(self, state_file: str) -> "ModelState":  # noqa: C901
+        """Loads the state values from file
+
+        Loads the state values stored in "state_file". A new
+        instance of ModelState is returned.
+
+        Args:
+            state_file: path to the input state file.
+        Returns:
+            new_state: new ModelState instance with values loaded
+                       from state_file.
+        """
+
+        # auxiliary functions, to be clearer and less verbose
+        # defined here as they only make sense within this method
+        def is_param(p):
+            return "params:" in p
+
+        def is_kernel_param(p):
+            return "params:kernel_params:" in p
+
+        def patch_p_name(p):
+            return p.replace("params:", "")
+
+        def patch_kp_name(p):
+            return p.replace("params:kernel_params:", "")
+
+        # Load the new state values
+        new_values = np.load(state_file, allow_pickle=True)
+        new_values = {name: value for name, value in new_values.items()}
+
+        # Init dicts for new parameters / optional variables
+        new_params = {}
+        new_params["kernel_params"] = {}
+        new_opts = {}
+
+        for name, value in new_values.items():
+            if is_kernel_param(name):
+                param = self.params["kernel_params"].get(patch_kp_name(name), None)
+            elif is_param(name):
+                param = self.params.get(patch_p_name(name), None)
+            else:
+                new_opts[name] = value
+                continue
+
+            # Check if the parameter is present in the model state
+            # Since we can only update the value of the parameter,
+            # it needs to be present. Otherwise, we cannot set the
+            # transformation functions etc
+            if param is None:
+                raise ValueError(f"Cannot get parameter {param} from {self}")
+
+            # Reconstruct the parameter
+            _, aux = param.tree_flatten()
+            param = param.tree_unflatten(aux, (value,))
+
+            if is_kernel_param(name):
+                new_params["kernel_params"][patch_kp_name(name)] = param
+            elif is_param(name):
+                new_params[patch_p_name(name)] = param
+            else:
+                raise RuntimeError("You should not be here.")
+
+        update_dict = {"params": new_params} | new_opts
+
+        return self.update(update_dict)

@@ -224,6 +224,15 @@ class RadialBasisFunctionNetwork:
     def predict(self, x: ArrayLike, linear_only: bool = False) -> Array:
         return predict(self.state, x=x, linear_only=linear_only)
 
+    def save(self, state_file: str) -> Dict:
+        """saves the model state values to file"""
+        return self.state.save(state_file)
+
+    def load(self, state_file: str) -> Self:
+        """loads the model state values from file"""
+        self.state = self.state.load(state_file)
+        return self
+
 
 # Alias
 RBFNet = RadialBasisFunctionNetwork
