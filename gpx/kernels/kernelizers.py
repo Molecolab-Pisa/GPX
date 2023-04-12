@@ -1,12 +1,28 @@
 from __future__ import annotations
 
 import functools
+import warnings
 from functools import partial
 from typing import Callable, Tuple, Union
 
 import jax
 import jax.numpy as jnp
 from jax import jacfwd, jacrev, jit, vmap
+
+
+def _warn_experimental(funcname):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{funcname} is still experimental and not tested.", stacklevel=2
+            )
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
 
 # =============================================================================
 # Kernel Decorator
@@ -43,17 +59,17 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
         @functools.wraps(kernel_func)
         @jit
         def kernel(x1, x2, params):
-            n, _ = x1.shape
-            m, _ = x2.shape
-            gram = jnp.zeros((n, m))
+            _kernel_func = lambda x1: vmap(  # noqa: E731
+                lambda x2: kernel_func(x1, x2, params)
+            )
 
-            def update_row(i, gram):
-                def update_col(j, gram):
-                    return gram.at[i, j].set(kernel_func(x1[i], x2[j], params))
+            @jax.checkpoint
+            def update_row(carry, x1s):
+                gram_row = _kernel_func(x1s)(x2)
+                return carry, gram_row
 
-                return jax.lax.fori_loop(0, m, update_col, gram)
-
-            return jax.lax.fori_loop(0, n, update_row, gram)
+            _, gram = jax.lax.scan(update_row, 0, x1)
+            return gram
 
     else:
 
@@ -78,18 +94,18 @@ def _grad0_kernelize(kernel_func: Callable) -> Callable:
     def kernel(x1, x2, params):
         n, nf = x1.shape
         m, _ = x2.shape
-        gram = jnp.zeros((n * nf, m))
 
-        def update_row(i, gram):
-            def update_col(j, gram):
-                nabla_k = jnp.atleast_2d(kernel_func(x1[i], x2[j], params)).T
-                return jax.lax.dynamic_update_slice(
-                    gram, update=nabla_k, start_indices=(i * nf, j)
-                )
+        _kernel_func = lambda x1: vmap(  # noqa: E731
+            lambda x2: kernel_func(x1, x2, params)
+        )
 
-            return jax.lax.fori_loop(0, m, update_col, gram)
+        @jax.checkpoint
+        def update_row(carry, x1s):
+            nabla_k = jnp.atleast_2d(_kernel_func(x1s)(x2)).T
+            return carry, nabla_k
 
-        return jax.lax.fori_loop(0, n, update_row, gram)
+        _, gram = jax.lax.scan(update_row, 0, x1)
+        return gram.reshape((n * nf, m))
 
     return kernel
 
@@ -97,6 +113,7 @@ def _grad0_kernelize(kernel_func: Callable) -> Callable:
 def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacrev(kernel_func, argnums=0)
 
+    @_warn_experimental("_grad0jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian):
@@ -106,15 +123,18 @@ def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
 
         gram = jnp.zeros((n * jv, m))
 
-        def update_row(i, gram):
-            def update_col(j, gram):
-                nabla_k = kernel_func(x1[i], x2[j], params)
-                nabla_k = jnp.einsum("i,ij->ji", nabla_k, jacobian[i])
-                return jax.lax.dynamic_update_slice(
-                    gram, update=nabla_k, start_indices=(i * jv, j)
-                )
+        _kernel_func = lambda x1: vmap(  # noqa: E731
+            lambda x2: kernel_func(x1, x2, params)
+        )
 
-            return jax.lax.fori_loop(0, m, update_col, gram)
+        @jax.checkpoint
+        def update_row(i, gram):
+            nabla_k = _kernel_func(x1[i])(x2)
+            # k = m, i = nf, j = jv
+            nabla_k = jnp.einsum("ki,ij->jk", nabla_k, jacobian[i])
+            return jax.lax.dynamic_update_slice(
+                gram, update=nabla_k, start_indices=(i * jv, 0)
+            )
 
         return jax.lax.fori_loop(0, n, update_row, gram)
 
@@ -129,18 +149,18 @@ def _grad1_kernelize(kernel_func: Callable) -> Callable:
     def kernel(x1, x2, params):
         n, _ = x1.shape
         m, mf = x2.shape
-        gram = jnp.zeros((n, m * mf))
 
-        def update_row(i, gram):
-            def update_col(j, gram):
-                nabla_k = jnp.atleast_2d(kernel_func(x1[i], x2[j], params))
-                return jax.lax.dynamic_update_slice(
-                    gram, update=nabla_k, start_indices=(i, j * mf)
-                )
+        _kernel_func = lambda x1: vmap(  # noqa: E731
+            lambda x2: kernel_func(x1, x2, params)
+        )
 
-            return jax.lax.fori_loop(0, m, update_col, gram)
+        @jax.checkpoint
+        def update_row(carry, x1s):
+            nabla_k = jnp.atleast_2d(_kernel_func(x1s)(x2))
+            return carry, nabla_k
 
-        return jax.lax.fori_loop(0, n, update_row, gram)
+        _, gram = jax.lax.scan(update_row, 0, x1)
+        return gram.reshape((n, m * mf))
 
     return kernel
 
@@ -148,6 +168,7 @@ def _grad1_kernelize(kernel_func: Callable) -> Callable:
 def _grad1jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacrev(kernel_func, argnums=1)
 
+    @_warn_experimental("_grad1jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian):
@@ -157,17 +178,20 @@ def _grad1jac_kernelize(kernel_func: Callable) -> Callable:
 
         gram = jnp.zeros((n, m * jv))
 
-        def update_row(i, gram):
-            def update_col(j, gram):
-                nabla_k = kernel_func(x1[i], x2[j], params)
-                nabla_k = jnp.einsum("i,ij->ij", nabla_k, jacobian[j])
-                return jax.lax.dynamic_update_slice(
-                    gram, update=nabla_k, start_indices=(i, j * jv)
-                )
+        _kernel_func = lambda x2: vmap(  # noqa: E731
+            lambda x1: kernel_func(x1, x2, params)
+        )
 
-            return jax.lax.fori_loop(0, m, update_col, gram)
+        @jax.checkpoint
+        def update_col(j, gram):
+            nabla_k = _kernel_func(x2[j])(x1)
+            # k = m, i = mf, j = jv
+            nabla_k = jnp.einsum("ki,ij->kj", nabla_k, jacobian[j])
+            return jax.lax.dynamic_update_slice(
+                gram, update=nabla_k, start_indices=(0, j * jv)
+            )
 
-        return jax.lax.fori_loop(0, n, update_row, gram)
+        return jax.lax.fori_loop(0, m, update_col, gram)
 
     return kernel
 
@@ -180,18 +204,18 @@ def _grad01_kernelize(kernel_func: Callable) -> Callable:
     def kernel(x1, x2, params):
         n, nf = x1.shape
         m, mf = x2.shape
-        gram = jnp.zeros((n * nf, m * mf))
 
-        def update_row(i, gram):
-            def update_col(j, gram):
-                nabla_k = jnp.atleast_2d(kernel_func(x1[i], x2[j], params))
-                return jax.lax.dynamic_update_slice(
-                    gram, update=nabla_k, start_indices=(i * nf, j * mf)
-                )
+        _kernel_func = lambda x1: vmap(  # noqa: E731
+            lambda x2: kernel_func(x1, x2, params), out_axes=1
+        )
 
-            return jax.lax.fori_loop(0, m, update_col, gram)
+        @jax.checkpoint
+        def update_row(carry, x1s):
+            hess_k = jnp.atleast_2d(_kernel_func(x1s)(x2))
+            return carry, hess_k
 
-        return jax.lax.fori_loop(0, n, update_row, gram)
+        _, gram = jax.lax.scan(update_row, 0, x1)
+        return gram.reshape((n * nf, m * mf))
 
     return kernel
 
@@ -199,6 +223,7 @@ def _grad01_kernelize(kernel_func: Callable) -> Callable:
 def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacfwd(jacrev(kernel_func, argnums=0), argnums=1)
 
+    @_warn_experimental("_grad01jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian1, jacobian2):
@@ -209,6 +234,7 @@ def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
 
         gram = jnp.zeros((n * j1v, m * j2v))
 
+        @jax.checkpoint
         def update_row(i, gram):
             def update_col(j, gram):
                 nabla_k = kernel_func(x1[i], x2[j], params)
