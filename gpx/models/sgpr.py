@@ -330,6 +330,7 @@ class SparseGaussianProcessRegression:
         self.kernel_params = kernel_params
         self.sigma = sigma
         self.x_locs = x_locs
+        self._init_default = dict(is_fitted=False, c=None, y_mean=None)
         self.state = init(
             kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
         )

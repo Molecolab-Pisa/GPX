@@ -265,6 +265,7 @@ def init(kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple) -> Mod
     Returns:
         state: model state
     """
+
     if not callable(kernel):
         raise RuntimeError(
             f"kernel must be provided as a callable function, you provided"
@@ -307,6 +308,7 @@ class GaussianProcessRegression:
         self.kernel = kernel
         self.kernel_params = kernel_params
         self.sigma = sigma
+        self._init_default = dict(is_fitted=False, c=None, y_mean=None)
         self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
 
     def init(

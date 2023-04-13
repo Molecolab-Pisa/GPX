@@ -199,6 +199,7 @@ class RadialBasisFunctionNetwork:
         self.alpha = alpha
         self.output_layer = output_layer
         self.loss_fn = loss_fn
+        self._init_default = {"output_layer": output_layer, "loss_fn": loss_fn}
         self.state = init(
             key=key,
             kernel=kernel,
