@@ -149,6 +149,8 @@ def init(
 class RadialBasisFunctionNetwork:
     "Radial Basis Function Network"
 
+    _init_default = dict(output_layer=identity, loss_fn=train_loss)
+
     def __init__(
         self,
         key: prng.PRNGKeyArray,
@@ -191,15 +193,6 @@ class RadialBasisFunctionNetwork:
                      by default, it minimizes the squared error plus the L2
                      regularization term.
         """
-        self.key = key
-        self.kernel = kernel
-        self.kernel_params = kernel_params
-        self.inducing_points = inducing_points
-        self.num_output = num_output
-        self.alpha = alpha
-        self.output_layer = output_layer
-        self.loss_fn = loss_fn
-        self._init_default = {"output_layer": output_layer, "loss_fn": loss_fn}
         self.state = init(
             key=key,
             kernel=kernel,
@@ -234,6 +227,12 @@ class RadialBasisFunctionNetwork:
             loss_fn=loss_fn,
         )
 
+    @classmethod
+    def from_state(cls, state: ModelState) -> "RadialBasisFunctionNetwork":
+        self = cls.__new__(cls)
+        self.state = state
+        return self
+
     def print(self) -> None:
         "prints the model parameters"
         return self.state.print_params()
@@ -244,6 +243,7 @@ class RadialBasisFunctionNetwork:
         )
         self.optimize_results_ = optres
         self.x_train = x
+        self.y_train = y
 
     def predict(self, x: ArrayLike, linear_only: bool = False) -> Array:
         return predict(self.state, x=x, linear_only=linear_only)

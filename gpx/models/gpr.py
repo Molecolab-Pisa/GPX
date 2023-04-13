@@ -296,6 +296,8 @@ def init(kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple) -> Mod
 
 
 class GaussianProcessRegression:
+    _init_default = dict(is_fitted=False, c=None, y_mean=None)
+
     def __init__(
         self, kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple
     ) -> None:
@@ -305,11 +307,13 @@ class GaussianProcessRegression:
             kernel_params: kernel parameters
             sigma: standard deviation of the gaussian noise
         """
-        self.kernel = kernel
-        self.kernel_params = kernel_params
-        self.sigma = sigma
-        self._init_default = dict(is_fitted=False, c=None, y_mean=None)
         self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
+
+    @classmethod
+    def from_state(cls, state: ModelState) -> "GaussianProcessRegression":
+        self = cls.__new__(cls)
+        self.state = state
+        return self
 
     def init(
         self, kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple
@@ -362,6 +366,7 @@ class GaussianProcessRegression:
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
         self.x_train = x
+        self.y_train = y
 
         return self
 

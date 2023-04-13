@@ -312,6 +312,8 @@ def init(
 
 
 class SparseGaussianProcessRegression:
+    _init_default = dict(is_fitted=False, c=None, y_mean=None)
+
     def __init__(
         self,
         kernel: Callable,
@@ -326,14 +328,15 @@ class SparseGaussianProcessRegression:
             sigma: standard deviation of the gaussian noise
             x_locs: landmark points (support points) of SGPR
         """
-        self.kernel = kernel
-        self.kernel_params = kernel_params
-        self.sigma = sigma
-        self.x_locs = x_locs
-        self._init_default = dict(is_fitted=False, c=None, y_mean=None)
         self.state = init(
             kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
         )
+
+    @classmethod
+    def from_state(cls, state: ModelState) -> "SparseGaussianProcessRegression":
+        self = cls.__new__(cls)
+        self.state = state
+        return self
 
     def init(
         self,
@@ -397,6 +400,7 @@ class SparseGaussianProcessRegression:
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
         self.x_locs_ = self.state.params["x_locs"].value
+        self.y_train = y
 
         return self
 
