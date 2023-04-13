@@ -334,6 +334,18 @@ class SparseGaussianProcessRegression:
             kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
         )
 
+    def init(
+        self,
+        kernel: Callable,
+        kernel_params: Dict[str, Tuple],
+        sigma: Tuple,
+        x_locs: Tuple,
+    ) -> ModelState:
+        "resets model state"
+        return init(
+            kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
+        )
+
     def print(self) -> None:
         "prints the model parameters"
         return self.state.print_params()

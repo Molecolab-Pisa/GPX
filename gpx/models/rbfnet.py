@@ -210,6 +210,29 @@ class RadialBasisFunctionNetwork:
             loss_fn=loss_fn,
         )
 
+    def init(
+        self,
+        key: prng.PRNGKeyArray,
+        kernel: Callable,
+        kernel_params: Dict[str, Tuple],
+        inducing_points: Tuple,
+        num_output: int,
+        output_layer: Callable = identity,
+        alpha: Tuple = (1.0, True, softplus, inverse_softplus),
+        loss_fn: Callable = train_loss,
+    ) -> ModelState:
+        "resets model state"
+        return init(
+            key=key,
+            kernel=kernel,
+            kernel_params=kernel_params,
+            inducing_points=inducing_points,
+            num_output=num_output,
+            alpha=alpha,
+            output_layer=output_layer,
+            loss_fn=loss_fn,
+        )
+
     def print(self) -> None:
         "prints the model parameters"
         return self.state.print_params()

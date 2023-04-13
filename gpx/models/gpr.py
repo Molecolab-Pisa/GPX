@@ -309,6 +309,12 @@ class GaussianProcessRegression:
         self.sigma = sigma
         self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
 
+    def init(
+        self, kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple
+    ) -> ModelState:
+        "resets model state"
+        return init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
+
     def print(self) -> None:
         "prints the model parameters"
         return self.state.print_params()
