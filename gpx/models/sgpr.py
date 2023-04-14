@@ -12,8 +12,10 @@ from typing_extensions import Self
 
 from ..optimize import scipy_minimize
 from ..parameters.model_state import ModelState
-from ..parameters.parameter import Parameter, parse_param
-from .utils import sample
+from ..parameters.parameter import Parameter
+from ..priors import NormalPrior
+from ..utils import inverse_softplus, softplus
+from .utils import _check_object_is_callable, _check_object_is_type, sample
 
 # =============================================================================
 # Sparse Gaussian Process Regression: functions
@@ -268,8 +270,23 @@ def sample_posterior(
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
+def default_params() -> Dict[str, Parameter]:
+    sigma = Parameter(
+        value=1.0,
+        trainable=True,
+        forward_transform=softplus,
+        backward_transform=inverse_softplus,
+        prior=NormalPrior(loc=0.0, scale=1.0),
+    )
+
+    return dict(sigma=sigma)
+
+
 def init(
-    kernel: Callable, kernel_params: Dict[str, Tuple], sigma: Tuple, x_locs: Tuple
+    kernel: Callable,
+    x_locs: Parameter,
+    kernel_params: Dict[str, Parameter] = None,
+    sigma: Parameter = None,
 ) -> ModelState:
     """initializes the model state of a SGPR (projected processes)
 
@@ -281,26 +298,23 @@ def init(
     Returns:
         state: model state
     """
-    if not callable(kernel):
-        raise RuntimeError(
-            f"kernel must be provided as a callable function, you provided"
-            f" {type(kernel)}"
-        )
+    _check_object_is_callable(kernel, "kernel")
 
-    if not isinstance(kernel_params, dict):
-        raise RuntimeError(
-            f"kernel_params must be provided as a dictionary, you provided"
-            f" {type(kernel_params)}"
-        )
+    if kernel_params is None:
+        kernel_params = kernel.default_params()
+    else:
+        _check_object_is_type(kernel_params, dict, "kernel_params")
+        for key in kernel_params.keys():
+            _check_object_is_type(kernel_params[key], Parameter, key)
 
-    kp = {}
-    for key in kernel_params:
-        param = kernel_params[key]
-        kp[key] = parse_param(param)
+    if sigma is None:
+        sigma = default_params().pop("sigma")
+    else:
+        _check_object_is_type(sigma, Parameter, "sigma")
 
-    sigma = parse_param(sigma)
-    x_locs = parse_param(x_locs)
-    params = {"kernel_params": kp, "sigma": sigma, "x_locs": x_locs}
+    _check_object_is_type(x_locs, Parameter, "x_locs")
+
+    params = {"kernel_params": kernel_params, "sigma": sigma, "x_locs": x_locs}
     opt = dict(is_fitted=False, c=None, y_mean=None)
 
     return ModelState(kernel, params, **opt)
@@ -317,9 +331,9 @@ class SparseGaussianProcessRegression:
     def __init__(
         self,
         kernel: Callable,
-        kernel_params: Dict[str, Tuple],
-        sigma: Tuple,
-        x_locs: Tuple,
+        x_locs: Parameter,
+        kernel_params: Dict[str, Parameter] = None,
+        sigma: Parameter = None,
     ) -> None:
         """
         Args:
@@ -341,14 +355,18 @@ class SparseGaussianProcessRegression:
     def init(
         self,
         kernel: Callable,
-        kernel_params: Dict[str, Tuple],
-        sigma: Tuple,
-        x_locs: Tuple,
+        x_locs: Parameter,
+        kernel_params: Dict[str, Parameter] = None,
+        sigma: Parameter = None,
     ) -> ModelState:
         "resets model state"
         return init(
             kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
         )
+
+    def default_params(self) -> Dict[str, Parameter]:
+        "default model parameters"
+        return default_params()
 
     def print(self) -> None:
         "prints the model parameters"

@@ -5,7 +5,8 @@ from jax import Array, jit
 from jax.typing import ArrayLike
 
 from ..parameters.parameter import Parameter
-from ..utils import euclidean_distance, squared_distances
+from ..priors import NormalPrior
+from ..utils import euclidean_distance, inverse_softplus, softplus, squared_distances
 from .kernelizers import grad_kernelize, kernelize
 
 # =============================================================================
@@ -243,6 +244,17 @@ class SquaredExponential(Kernel):
         # faster version for evaluating k
         self.k = squared_exponential_kernel
 
+    def default_params(self):
+        return dict(
+            lengthscale=Parameter(
+                value=1.0,
+                trainable=True,
+                forward_transform=softplus,
+                backward_transform=inverse_softplus,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )
+
 
 class Matern12(Kernel):
     def __init__(self) -> None:
@@ -250,6 +262,17 @@ class Matern12(Kernel):
         super().__init__()
         # faster version for evaluating k
         self.k = matern12_kernel
+
+    def default_params(self):
+        return dict(
+            lengthscale=Parameter(
+                value=1.0,
+                trainable=True,
+                forward_transform=softplus,
+                backward_transform=inverse_softplus,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )
 
 
 class Matern32(Kernel):
@@ -259,6 +282,17 @@ class Matern32(Kernel):
         # faster version for evaluating k
         self.k = matern32_kernel
 
+    def default_params(self):
+        return dict(
+            lengthscale=Parameter(
+                value=1.0,
+                trainable=True,
+                forward_transform=softplus,
+                backward_transform=inverse_softplus,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )
+
 
 class Matern52(Kernel):
     def __init__(self) -> None:
@@ -266,3 +300,14 @@ class Matern52(Kernel):
         super().__init__()
         # faster version for evaluating k
         self.k = matern52_kernel
+
+    def default_params(self):
+        return dict(
+            lengthscale=Parameter(
+                value=1.0,
+                trainable=True,
+                forward_transform=softplus,
+                backward_transform=inverse_softplus,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )

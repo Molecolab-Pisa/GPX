@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict
 
 import jax.numpy as jnp
 from jax import Array, jit, random
@@ -11,8 +11,10 @@ from typing_extensions import Self
 
 from ..optimize import scipy_minimize
 from ..parameters import ModelState
-from ..parameters.parameter import Parameter, parse_param
+from ..parameters.parameter import Parameter
+from ..priors import NormalPrior
 from ..utils import identity, inverse_softplus, softplus
+from .utils import _check_object_is_callable, _check_object_is_type
 
 
 @partial(jit, static_argnums=[3, 4])
@@ -88,52 +90,70 @@ def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array
         )
 
 
+def default_params(
+    key: prng.PRNGKeyArray, num_input: int, num_output: int
+) -> Dict[str, Parameter]:
+    # regularization strength
+    alpha = Parameter(
+        value=1.0,
+        trainable=True,
+        forward_transform=softplus,
+        backward_transform=inverse_softplus,
+        prior=NormalPrior(loc=0.0, scale=1.0),
+    )
+
+    # weights
+    weights = Parameter(
+        value=random.normal(key, shape=(num_input, num_output)),
+        trainable=True,
+        forward_transform=identity,
+        backward_transform=identity,
+        prior=NormalPrior(loc=0.0, scale=1.0, shape=(num_input, num_output)),
+    )
+
+    return dict(alpha=alpha, weights=weights)
+
+
 def init(
     key: prng.PRNGKeyArray,
     kernel: Callable,
-    kernel_params: Dict[str, Tuple],
-    inducing_points: Tuple,
+    inducing_points: Parameter,
     num_output: int,
+    kernel_params: Dict[str, Parameter] = None,
+    alpha: Parameter = None,
     output_layer: Callable = identity,
-    alpha: Tuple = (1.0, True, softplus, inverse_softplus),
     loss_fn: Callable = train_loss,
 ) -> ModelState:
-    if not callable(kernel):
-        raise RuntimeError(
-            f"kernel must be provided as a callable function, you provided"
-            f" {type(kernel)}"
-        )
+    # kernel
+    _check_object_is_callable(kernel, "kernel")
 
-    if not isinstance(kernel_params, dict):
-        raise RuntimeError(
-            f"kernel_params must be provided as a dictionary, you provided"
-            f" {type(kernel_params)}"
-        )
+    # kernel parameters
+    if kernel_params is None:
+        kernel_params = kernel.default_params()
+    else:
+        _check_object_is_type(kernel_params, dict, "kernel_params")
+        for key in kernel_params.keys():
+            _check_object_is_type(kernel_params[key], Parameter, key)
 
-    inducing_points = parse_param(inducing_points)
+    # inducing points
+    _check_object_is_type(inducing_points, Parameter, "inducing_points")
 
     # number of inducing points
     num_input = inducing_points.value.shape[0]
 
-    weights = Parameter(
-        random.normal(key, shape=(num_input, num_output)),
-        True,
-        identity,
-        identity,
-    )
+    _defaults = default_params(key, num_input, num_output)
+    weights = _defaults.pop("weights")
 
-    kp = {}
-    for key in kernel_params:
-        param = kernel_params[key]
-        kp[key] = parse_param(param)
-
-    alpha = parse_param(alpha)
+    if alpha is None:
+        alpha = _defaults.pop("alpha")
+    else:
+        _check_object_is_type(alpha, Parameter, "alpha")
 
     # Careful, as here the order matters (thought it shouldn't for a good api)
     params = {
         "alpha": alpha,
         "inducing_points": inducing_points,
-        "kernel_params": kp,
+        "kernel_params": kernel_params,
         "weights": weights,
     }
     opt = {"output_layer": output_layer, "loss_fn": loss_fn}
@@ -155,11 +175,11 @@ class RadialBasisFunctionNetwork:
         self,
         key: prng.PRNGKeyArray,
         kernel: Callable,
-        kernel_params: Dict[str, Tuple],
-        inducing_points: Tuple,
+        inducing_points: Parameter,
         num_output: int,
+        kernel_params: Dict[str, Parameter] = None,
+        alpha: Parameter = None,
         output_layer: Callable = identity,
-        alpha: Tuple = (1.0, True, softplus, inverse_softplus),
         loss_fn: Callable = train_loss,
     ) -> None:
         """
@@ -208,11 +228,11 @@ class RadialBasisFunctionNetwork:
         self,
         key: prng.PRNGKeyArray,
         kernel: Callable,
-        kernel_params: Dict[str, Tuple],
-        inducing_points: Tuple,
+        inducing_points: Parameter,
         num_output: int,
+        kernel_params: Dict[str, Parameter] = None,
+        alpha: Parameter = None,
         output_layer: Callable = identity,
-        alpha: Tuple = (1.0, True, softplus, inverse_softplus),
         loss_fn: Callable = train_loss,
     ) -> ModelState:
         "resets model state"
@@ -232,6 +252,12 @@ class RadialBasisFunctionNetwork:
         self = cls.__new__(cls)
         self.state = state
         return self
+
+    def default_params(
+        self, key: prng.PRNGKeyArray, num_input: int, num_output: int
+    ) -> Dict[str, Parameter]:
+        "default model parameters"
+        return default_params(key=key, num_input=num_input, num_output=num_output)
 
     def print(self) -> None:
         "prints the model parameters"

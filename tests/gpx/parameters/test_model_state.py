@@ -5,6 +5,7 @@ from numpy.testing import assert_equal
 
 from gpx.kernels import SquaredExponential
 from gpx.parameters import ModelState, Parameter
+from gpx.priors import NormalPrior
 from gpx.utils import inverse_softplus, softplus
 
 
@@ -13,9 +14,11 @@ def create_model_state():
         kernel=SquaredExponential(),
         params={
             "kernel_params": {
-                "lengthscale": Parameter(1.0, True, softplus, inverse_softplus)
+                "lengthscale": Parameter(
+                    1.0, True, softplus, inverse_softplus, NormalPrior()
+                )
             },
-            "sigma": Parameter(0.1, False, softplus, inverse_softplus),
+            "sigma": Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
         },
     )
     return state
@@ -83,3 +86,25 @@ def test_save_and_reload_state(tmp_path, aux):
         assert np.all(state.aux == new_state.aux)
     else:
         assert state.aux == new_state.aux
+
+
+def test_shallow_copy():
+    state = create_model_state()
+    state_copied = state.copy()
+
+    # copy returns two different objects
+    with pytest.raises(AssertionError):
+        assert state is state_copied
+
+    # kernel is not copied
+    assert state.kernel is state_copied.kernel
+
+    # params are copied
+    with pytest.raises(AssertionError):
+        assert state.params is state_copied.params
+
+    # if the kernel is reassigned to another object,
+    # the change takes place only in one state
+    state.kernel = softplus
+    with pytest.raises(AssertionError):
+        assert state.kernel is state_copied.kernel

@@ -16,6 +16,20 @@ def _recursive_traverse_dict(dictionary: Dict) -> Generator[ArrayLike, None, Non
             yield value
 
 
+def _check_same_shape(a: ArrayLike, b: ArrayLike, a_name: str, b_name: str) -> None:
+    if a.shape != b.shape:
+        raise ValueError(
+            f"{a_name}.shape={a.shape} and {b_name}.shape={b.shape} do not match."
+        )
+
+
+def _check_same_dtype(a: ArrayLike, b: ArrayLike, a_name: str, b_name: str) -> None:
+    if a.dtype != b.dtype:
+        raise ValueError(
+            f"{a_name}.dtype={a.dtype} and {b_name}.dtype={b.dtype} do not match."
+        )
+
+
 def _is_numeric(value: Any) -> bool:
     """check if value is an integer, unsigned integer, or a float
 

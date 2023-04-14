@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import jax
@@ -63,6 +64,15 @@ class ModelState:
         p_structure = jax.tree_util.tree_structure(p)
         self._params = jax.tree_util.tree_unflatten(p_structure, values)
         self._params_structure = p_structure
+
+    def _params_priors(
+        self, params: Dict[str, Parameter]
+    ) -> List["Prior"]:  # noqa: F821
+        return [p.prior for p in _recursive_traverse_dict(params)]
+
+    @property
+    def params_priors(self) -> List["Prior"]:  # noqa: F821
+        return self._params_priors(self.params)
 
     def _params_forward_transforms(
         self, params: Dict[str, Parameter]
@@ -136,6 +146,12 @@ class ModelState:
             opt[key] = val
         return self.__class__(kernel, params, **opt)
 
+    def __copy__(self) -> "ModelState":
+        return self.update({})
+
+    def copy(self) -> "ModelState":
+        return copy.copy(self)
+
     def print_params(self, tablefmt: Optional[str] = "simple_grid") -> None:
         params = self.params.copy()
         kernel_params = params.pop("kernel_params")
@@ -145,6 +161,7 @@ class ModelState:
             "trainable",
             "forward",
             "backward",
+            "prior",
             "type",
             "dtype",
             "shape",
@@ -160,6 +177,7 @@ class ModelState:
                 p.trainable,
                 p.forward_transform.__name__,
                 p.backward_transform.__name__,
+                str(p.prior),
                 type(v).__name__,
                 v.dtype,
                 v.shape,

@@ -1,11 +1,23 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import jax.numpy as jnp
 from jax import Array, random
 from jax._src import prng
 from jax.typing import ArrayLike
+
+
+def _check_object_is_callable(obj: Any, name: str) -> None:
+    if not callable(obj):
+        raise ValueError(f"{name} must be a callable, you provided {type(obj)}")
+
+
+def _check_object_is_type(obj: Any, ref_type: Any, name: str) -> None:
+    if not isinstance(obj, ref_type):
+        raise ValueError(
+            f"{name} must be a {ref_type} instance, you provided {type(obj)}"
+        )
 
 
 def sample(
