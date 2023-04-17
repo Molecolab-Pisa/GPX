@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
+from jax._src import prng
 from jax.typing import ArrayLike
 from tabulate import tabulate
 
@@ -297,3 +298,47 @@ class ModelState:
         update_dict = {"params": new_params} | new_opts
 
         return self.update(update_dict)
+
+    def randomize(
+        self, key: prng.PRNGKeyArray, opt: Dict[str, Any] = None
+    ) -> "ModelState":
+        """Creates a new state with randomized parameter values
+
+        Creates a copy of the current state and updates the copy so that the parameter
+        values are sampled from their prior distribution and the other values are set
+        to default.
+        """
+
+        # Init dictionary for optional parameters
+        opt = {} if opt is None else opt
+
+        # Make a copy of the current model state
+        state = self.copy()
+
+        trainables = state.params_trainable
+        priors = state.params_priors
+        forwards = state.params_forward_transforms
+
+        # Flatten the parameters dictionary so that
+        # all the keys are handled at the same time
+        values, treedef = jax.tree_util.tree_flatten(state.params)
+
+        # Init list of new parameters
+        new_values = []
+
+        for value, prior, trainable, forward in zip(
+            values, priors, trainables, forwards
+        ):
+            if trainable:
+                subkey, key = jax.random.split(key)
+                new_value = forward(prior.sample(key))
+                new_values.append(new_value)
+            else:
+                new_values.append(value)
+
+        # Reconstruct the parameters dictionary with new values
+        new_params = jax.tree_util.tree_unflatten(treedef, new_values)
+
+        new_state = {"params": new_params} | opt
+
+        return state.update(new_state)

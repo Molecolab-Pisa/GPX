@@ -1,6 +1,8 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax import random
 from numpy.testing import assert_equal
 
 from gpx.kernels import SquaredExponential
@@ -108,3 +110,47 @@ def test_shallow_copy():
     state.kernel = softplus
     with pytest.raises(AssertionError):
         assert state.kernel is state_copied.kernel
+
+
+def test_randomize_model_state():
+    state = create_model_state()
+    randomized_state = state.randomize(random.PRNGKey(2023))
+
+    # check that the new object is a ModelState class
+    assert isinstance(randomized_state, ModelState)
+
+    # the state is not modified inplace (a copy with the .copy() method is made)
+    with pytest.raises(AssertionError):
+        assert state == randomized_state
+
+    # the kernel is not modified nor copied
+    assert state.kernel is randomized_state.kernel
+
+    # check parameters attributes
+    old_lensc = state.params["kernel_params"]["lengthscale"]
+    new_lensc = randomized_state.params["kernel_params"]["lengthscale"]
+    old_sigma = state.params["sigma"]
+    new_sigma = randomized_state.params["sigma"]
+
+    for param, new_param in zip([old_lensc, old_sigma], [new_lensc, new_sigma]):
+        # check that they are Parameter instances
+        assert isinstance(param, Parameter)
+        assert isinstance(new_param, Parameter)
+
+        # check that all the other attributes of Parameter are the same python objects
+        assert param.forward_transform is new_param.forward_transform
+        assert param.backward_transform is new_param.backward_transform
+        assert param.trainable is new_param.trainable
+
+    # lenghtscale is trainable:
+    # check that the new value is NOT equal to the old one
+    with pytest.raises(AssertionError):
+        assert_equal(old_lensc.value, new_lensc.value)
+
+    # sigma is not trainable:
+    # check that the new value is equal to the old one
+    assert_equal(old_sigma.value, new_sigma.value)
+
+    # Check that the two values are different objects
+    with pytest.raises(AssertionError):
+        assert old_sigma.value is new_sigma.value

@@ -455,6 +455,15 @@ class GaussianProcessRegression:
         self.state = self.state.load(state_file)
         return self
 
+    def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True) -> Self:
+        """Creates a new model state with randomized parameter values"""
+        if reset:
+            new_state = self.state.randomize(key, opt=self._init_default)
+        else:
+            new_state = self.state.randomize(key)
+
+        return self.from_state(new_state)
+
 
 # Alias
 GPR = GaussianProcessRegression
