@@ -132,8 +132,8 @@ def init(
         kernel_params = kernel.default_params()
     else:
         _check_object_is_type(kernel_params, dict, "kernel_params")
-        for key in kernel_params.keys():
-            _check_object_is_type(kernel_params[key], Parameter, key)
+        for pname in kernel_params.keys():
+            _check_object_is_type(kernel_params[pname], Parameter, pname)
 
     # inducing points
     _check_object_is_type(inducing_points, Parameter, "inducing_points")
