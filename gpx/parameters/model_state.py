@@ -342,3 +342,18 @@ class ModelState:
         new_state = {"params": new_params} | opt
 
         return state.update(new_state)
+
+    def transform(self, mode: str) -> "ModelState":
+        if mode == "forward":
+            transforms = self.params_forward_transforms
+        elif mode == "backward":
+            transforms = self.params_backward_transforms
+        else:
+            raise ValueError(
+                f'mode should be either "forward" or "backward", got {mode}'
+            )
+
+        leaves, treedef = jax.tree_util.tree_flatten(self.params)
+        new_leaves = [func(leaf) for func, leaf in zip(transforms, leaves)]
+        new_params = jax.tree_util.tree_unflatten(treedef, new_leaves)
+        return self.update({"params": new_params})
