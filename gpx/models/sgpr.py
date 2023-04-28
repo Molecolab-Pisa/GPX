@@ -10,7 +10,7 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
-from ..optimize import scipy_minimize
+from ..optimizers import scipy_minimize
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior

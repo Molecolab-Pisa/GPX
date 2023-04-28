@@ -9,7 +9,7 @@ from jax.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
 
-from .parameters.model_state import ModelState
+from ..parameters.model_state import ModelState
 
 # ============================================================================
 # Scipy Optimizer interface

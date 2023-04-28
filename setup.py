@@ -8,4 +8,5 @@ setup(
     author_email="edoardo.cignoni96@gmail.com",
     description=open("README.md").read(),
     packages=find_packages(),
+    install_requires=["typing_extensions", "tqdm", "optax", "tabulate", "numpy"],
 )
