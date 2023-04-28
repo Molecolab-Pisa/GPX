@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import jax.numpy as jnp
 from jax import Array, jit, random
@@ -9,12 +9,15 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
-from ..optimizers import scipy_minimize
+from ..optimizers import optax_minimize, scipy_minimize
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
 from ..utils import identity, inverse_softplus, softplus
 from .utils import _check_object_is_callable, _check_object_is_type
+
+# optax optimizer
+GradientTransformation = Any
 
 
 @partial(jit, static_argnums=[3, 4])
@@ -267,9 +270,43 @@ class RadialBasisFunctionNetwork:
         self.state, optres = scipy_minimize(
             self.state, x=x, y=y, loss_fn=self.state.loss_fn
         )
+
         self.optimize_results_ = optres
         self.x_train = x
         self.y_train = y
+
+        return self
+
+    def fit_optax(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        optimizer: GradientTransformation,
+        x_val: ArrayLike,
+        y_val: ArrayLike,
+        nsteps: int = 10,
+        learning_rate: float = 1.0,
+        update_every: int = 1,
+    ) -> Self:
+        self.state, opt_state, history = optax_minimize(
+            state=self.state,
+            x=x,
+            y=y,
+            loss_fn=self.state.loss_fn,
+            optimizer=optimizer,
+            x_val=x_val,
+            y_val=y_val,
+            nsteps=nsteps,
+            learning_rate=learning_rate,
+            update_every=update_every,
+        )
+
+        self.optax_opt_state_ = opt_state
+        self.optax_history_ = history
+        self.x_train = x
+        self.y_train = y
+
+        return self
 
     def predict(self, x: ArrayLike, linear_only: bool = False) -> Array:
         return predict(self.state, x=x, linear_only=linear_only)
