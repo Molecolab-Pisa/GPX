@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 from scipy.special import gamma, kv
 
 from gpx.kernels.kernels import (
+    linear_kernel,
     m12_kernel,
     m32_kernel,
     m52_kernel,
@@ -19,6 +20,17 @@ from gpx.utils import inverse_softplus, softplus
 # ============================================================================
 # Reference kernels
 # ============================================================================
+def reference_linear_kernel(x1, x2, params):
+    n1, m1 = x1.shape
+    n2, _ = x2.shape
+    K = np.zeros((n1, n2))
+    for i in range(n1):
+        for j in range(n2):
+            for l in range(m1):
+                K[i, j] = K[i, j] + x1[i, l] * x2.T[l, j]
+    return K
+
+
 def reference_squared_exponential_kernel(x1, x2, params):
     n1, _ = x1.shape
     n2, _ = x2.shape
@@ -43,6 +55,23 @@ def reference_matern_kernel(x1, x2, nu, params):
             fact = jnp.sqrt(2 * nu) * dist
             K[i, j] = ((2.0 ** (1.0 - nu)) / gamma(nu)) * (fact**nu) * kv(nu, fact)
     return K
+
+
+# ============================================================================
+# Linear kernel
+# ============================================================================
+@pytest.mark.parametrize("dim", [1, 10])
+def test_linear_kernel(dim):
+    key = random.PRNGKey(2022)
+    X1 = random.normal(key, shape=(10, dim))
+    subkey, key = random.split(key)
+    X2 = random.normal(subkey, shape=(20, dim))
+    params = {}
+
+    K = linear_kernel(X1, X2, params)
+    K_ref = reference_linear_kernel(X1, X2, params)
+
+    assert_allclose(K, K_ref)
 
 
 # ============================================================================

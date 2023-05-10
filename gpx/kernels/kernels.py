@@ -10,6 +10,62 @@ from ..utils import euclidean_distance, inverse_softplus, softplus, squared_dist
 from .kernelizers import grad_kernelize, kernelize
 
 # =============================================================================
+# Constant Kernel
+# =============================================================================
+
+
+def _constant_kernel_base(x1: ArrayLike, x2: ArrayLike, variance: float) -> Array:
+    return variance
+
+
+@jit
+def constant_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    variance = params["variance"].value
+    return _constant_kernel_base(x1, x2, variance)
+
+
+def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: float) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    return jnp.ones((ns1, ns2), dtype=jnp.float64) * variance
+
+
+@jit
+def constant_kernel(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    variance = params["variance"].value
+    return _constant_kernel(x1, x2, variance)
+
+
+# =============================================================================
+# Linear Kernel
+# =============================================================================
+
+
+def _linear_kernel_base(x1: ArrayLike, x2: ArrayLike) -> Array:
+    return jnp.dot(x1, x2)
+
+
+@jit
+def linear_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    return _linear_kernel_base(x1, x2)
+
+
+def _linear_kernel(x1: ArrayLike, x2: ArrayLike) -> Array:
+    return x1 @ x2.T
+
+
+@jit
+def linear_kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]) -> Array:
+    return _linear_kernel(x1, x2)
+
+
+# =============================================================================
 # Squared Exponential Kernel
 # =============================================================================
 
@@ -159,6 +215,8 @@ def matern52_kernel(
 # Kernel aliases
 # =============================================================================
 
+const_kernel = constant_kernel
+lin_kernel = linear_kernel
 se_kernel = squared_exponential_kernel
 m12_kernel = matern12_kernel
 m32_kernel = matern32_kernel
@@ -235,6 +293,36 @@ class Kernel:
 
     def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
         return self.k(x1, x2, params)
+
+
+class Constant(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = constant_kernel_base
+        super().__init__()
+        # faster version for evaluating k
+        self.k = constant_kernel
+
+    def default_params(self):
+        return dict(
+            variance=Parameter(
+                value=1.0,
+                trainable=True,
+                forward_transform=softplus,
+                backward_transform=inverse_softplus,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )
+
+
+class Linear(Kernel):
+    def __init__(self) -> None:
+        self._kernel_base = linear_kernel_base
+        super().__init__()
+        # faster version for evaluating k
+        self.k = linear_kernel
+
+    def default_params(self):
+        return dict()
 
 
 class SquaredExponential(Kernel):
