@@ -105,7 +105,7 @@ class NormalPrior(Prior):
         self._scale = jnp.array(value, dtype=self.dtype)
 
     def __str__(self) -> str:
-        name = self.__class__.__name__
+        name = "Normal"
         loc = self.loc
         scale = self.scale
         return f"{name}({loc}, {scale})"

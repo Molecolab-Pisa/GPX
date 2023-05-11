@@ -9,7 +9,7 @@ from jax.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
 
-from ..parameters.model_state import ModelState
+from ..parameters import ModelState
 
 # ============================================================================
 # Scipy Optimizer interface
@@ -38,7 +38,7 @@ def scipy_minimize(
                  returning a scalar value
     Returns:
         state: updated model state
-        optser: optimization results, as output by the SciPy's optimizer
+        optres: optimization results, as output by the SciPy's optimizer
     """
 
     fwd_fns = state.params_forward_transforms

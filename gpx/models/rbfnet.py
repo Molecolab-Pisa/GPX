@@ -14,7 +14,11 @@ from ..parameters import ModelState
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
 from ..utils import identity, inverse_softplus, softplus
-from .utils import _check_object_is_callable, _check_object_is_type
+from .utils import (
+    _check_object_is_callable,
+    _check_object_is_type,
+    randomized_minimization,
+)
 
 # optax optimizer
 GradientTransformation = Any
@@ -266,14 +270,30 @@ class RadialBasisFunctionNetwork:
         "prints the model parameters"
         return self.state.print_params()
 
-    def fit(self, x: ArrayLike, y: ArrayLike) -> Self:
-        self.state, optres = scipy_minimize(
-            self.state, x=x, y=y, loss_fn=self.state.loss_fn
+    def fit(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        num_restarts: Optional[int] = 0,
+        key: prng.PRNGKeyArray = None,
+        return_history: Optional[bool] = False,
+    ) -> Self:
+        minimization_function = scipy_minimize
+        self.state, optres, *history = randomized_minimization(
+            key=key,
+            state=self.state,
+            x=x,
+            y=y,
+            minimization_function=minimization_function,
+            num_restarts=num_restarts,
+            return_history=return_history,
         )
-
         self.optimize_results_ = optres
         self.x_train = x
         self.y_train = y
+        if return_history:
+            self.states_history_ = history[0]
+            self.losses_history_ = history[1]
 
         return self
 
@@ -281,30 +301,42 @@ class RadialBasisFunctionNetwork:
         self,
         x: ArrayLike,
         y: ArrayLike,
-        optimizer: GradientTransformation,
-        x_val: ArrayLike,
-        y_val: ArrayLike,
+        optimizer: GradientTransformation = None,
+        x_val: ArrayLike = None,
+        y_val: ArrayLike = None,
         nsteps: int = 10,
         learning_rate: float = 1.0,
         update_every: int = 1,
+        num_restarts: int = 0,
+        key: prng.PRNGKeyArray = None,
+        return_history: int = False,
     ) -> Self:
-        self.state, opt_state, history = optax_minimize(
+        minimization_function = optax_minimize
+        self.state, opt_state, epochs_history, *history = randomized_minimization(
+            key=key,
             state=self.state,
             x=x,
             y=y,
-            loss_fn=self.state.loss_fn,
-            optimizer=optimizer,
-            x_val=x_val,
-            y_val=y_val,
-            nsteps=nsteps,
-            learning_rate=learning_rate,
-            update_every=update_every,
+            minimization_function=minimization_function,
+            num_restarts=num_restarts,
+            return_history=return_history,
+            opt_kwargs=dict(
+                optimizer=optimizer,
+                x_val=x_val,
+                y_val=y_val,
+                nsteps=nsteps,
+                learning_rate=learning_rate,
+                update_every=update_every,
+            ),
         )
 
         self.optax_opt_state_ = opt_state
-        self.optax_history_ = history
+        self.optax_history_ = epochs_history
         self.x_train = x
         self.y_train = y
+        if return_history:
+            self.states_history_ = history[0]
+            self.losses_history_ = history[1]
 
         return self
 

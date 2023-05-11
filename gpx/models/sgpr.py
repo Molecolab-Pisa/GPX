@@ -15,7 +15,12 @@ from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
 from ..utils import inverse_softplus, softplus
-from .utils import _check_object_is_callable, _check_object_is_type, sample
+from .utils import (
+    _check_object_is_callable,
+    _check_object_is_type,
+    randomized_minimization,
+    sample,
+)
 
 # =============================================================================
 # Sparse Gaussian Process Regression: functions
@@ -92,6 +97,9 @@ def log_marginal_likelihood(
         kernel=state.kernel,
         return_negative=return_negative,
     )
+
+
+train_loss = partial(log_marginal_likelihood, return_negative=True)
 
 
 @partial(jit, static_argnums=[3])
@@ -287,6 +295,7 @@ def init(
     x_locs: Parameter,
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
+    loss_fn: Callable = train_loss,
 ) -> ModelState:
     """initializes the model state of a SGPR (projected processes)
 
@@ -295,6 +304,7 @@ def init(
         kernel_params: kernel parameters
         sigma: standard deviation of the gaussian noise
         x_locs: landmark points (support points) of the SGPR
+        loss_fn: loss function. Default is negative log marginal likelihood
     Returns:
         state: model state
     """
@@ -315,7 +325,7 @@ def init(
     _check_object_is_type(x_locs, Parameter, "x_locs")
 
     params = {"kernel_params": kernel_params, "sigma": sigma, "x_locs": x_locs}
-    opt = dict(is_fitted=False, c=None, y_mean=None)
+    opt = {"loss_fn": loss_fn, "is_fitted": False, "c": None, "y_mean": None}
 
     return ModelState(kernel, params, **opt)
 
@@ -334,6 +344,7 @@ class SparseGaussianProcessRegression:
         x_locs: Parameter,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
+        loss_fn: Callable = train_loss,
     ) -> None:
         """
         Args:
@@ -341,6 +352,7 @@ class SparseGaussianProcessRegression:
             kernel_params: kernel parameters
             sigma: standard deviation of the gaussian noise
             x_locs: landmark points (support points) of SGPR
+            loss_fn: loss function
         """
         self.state = init(
             kernel=kernel, kernel_params=kernel_params, sigma=sigma, x_locs=x_locs
@@ -358,6 +370,7 @@ class SparseGaussianProcessRegression:
         x_locs: Parameter,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
+        loss_fn: Callable = train_loss,
     ) -> ModelState:
         "resets model state"
         return init(
@@ -394,7 +407,13 @@ class SparseGaussianProcessRegression:
         )
 
     def fit(
-        self, x: ArrayLike, y: ArrayLike, minimize_lml: Optional[bool] = True
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        minimize_lml: Optional[bool] = True,
+        num_restarts: Optional[int] = 0,
+        key: prng.PRNGKeyArray = None,
+        return_history: Optional[bool] = False,
     ) -> Self:
         """fits a SGPR (projected processes)
 
@@ -407,10 +426,24 @@ class SparseGaussianProcessRegression:
             y: labels
             minimize_lml: whether to tune the parameters to optimize the
                           log marginal likelihood
+            num_restarts: number of restarts with randomization to do.
+                          If 0, the model is fitted once without any randomization.
+
+        Notes: randomized_minimization requires to optimize the log marginal likelihood.
+               In order to optimize with randomized restarts you need to provide a valid
+               JAX PRNGKey.
         """
         if minimize_lml:
-            loss_fn = partial(log_marginal_likelihood, return_negative=True)
-            self.state, optres = scipy_minimize(self.state, x=x, y=y, loss_fn=loss_fn)
+            minimization_function = scipy_minimize
+            self.state, optres, *history = randomized_minimization(
+                key=key,
+                state=self.state,
+                x=x,
+                y=y,
+                minimization_function=minimization_function,
+                num_restarts=num_restarts,
+                return_history=return_history,
+            )
             self.optimize_results_ = optres
 
         self.state = fit(self.state, x=x, y=y)
@@ -418,7 +451,11 @@ class SparseGaussianProcessRegression:
         self.c_ = self.state.c
         self.y_mean_ = self.state.y_mean
         self.x_locs_ = self.state.params["x_locs"].value
+        self.x_train = x
         self.y_train = y
+        if return_history:
+            self.states_history_ = history[0]
+            self.losses_history_ = history[1]
 
         return self
 
