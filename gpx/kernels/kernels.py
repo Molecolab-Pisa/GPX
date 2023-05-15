@@ -8,6 +8,7 @@ from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
 from ..utils import euclidean_distance, inverse_softplus, softplus, squared_distances
 from .kernelizers import grad_kernelize, kernelize
+from .operations import sum_kernels, sum_kernels_jac, sum_kernels_jac2
 
 # =============================================================================
 # Constant Kernel
@@ -399,3 +400,50 @@ class Matern52(Kernel):
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )
+
+
+class Sum:
+    """Class representing the sum of two kernels
+
+    *   kernel function (self.k)
+    *   derivative kernel wrt first argument (self.d0k)
+    *   derivative kernel wrt second argument (self.d1k)
+    *   hessian kernel (self.d01k)
+    *   derivative kernel - jacobian product wrt first argument (self.d0kj)
+    *   derivative kernel - jacobian product wrt second argument (self.d1kj)
+    *   hessian kernel - jacobian product (self.d01kj)
+
+    In addition, calling the class will evaluate the kernel function, i.e.,
+    it is equivalent of calling `self.k`.
+
+    Parameters for both kernels must be passed as
+    {'kernel1' : params1, 'kernel2' : params2},
+    where params1 and params2 are standard GPX parameters for kernels.
+    """
+
+    def __init__(self, kernel1: Kernel, kernel2: Kernel) -> None:
+        # kernel
+        self._kernel_base = sum_kernels(kernel1._kernel_base, kernel2._kernel_base)
+        self.k = sum_kernels(kernel1.k, kernel2.k)
+        self.kernel1 = kernel1
+        self.kernel2 = kernel2
+
+        # derivative/hessian kernel
+        self.d0k = sum_kernels(kernel1.d0k, kernel2.d0k)
+        self.d1k = sum_kernels(kernel1.d1k, kernel2.d1k)
+        self.d01k = sum_kernels(kernel1.d01k, kernel2.d01k)
+
+        # derivative/hessian kernel-jacobian products
+        self.d0kj = sum_kernels_jac(kernel1.d0kj, kernel2.d0kj)
+        self.d1kj = sum_kernels_jac(kernel1.d1kj, kernel2.d1kj)
+        self.d01kj = sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj)
+
+    def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
+        return self.k(x1, x2, params)
+
+    def default_params(self):
+        # simply delegate
+        return {
+            "kernel1": self.kernel1.default_params(),
+            "kernel2": self.kernel2.default_params(),
+        }

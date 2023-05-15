@@ -5,6 +5,7 @@ from .kernels import (
     Matern32,
     Matern52,
     SquaredExponential,
+    Sum,
     const_kernel,
     constant_kernel_base,
     lin_kernel,
