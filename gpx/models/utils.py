@@ -24,6 +24,17 @@ def _check_object_is_type(obj: Any, ref_type: Any, name: str) -> None:
         )
 
 
+def _check_recursive_dict_type(dictionary: Dict, ref_type: Any) -> None:
+    for key, value in dictionary.items():
+        if isinstance(value, dict):
+            _check_recursive_dict_type(value, ref_type=ref_type)
+        else:
+            if not isinstance(value, ref_type):
+                raise ValueError(
+                    f"{key} must be a {ref_type} instance, you provided {type(value)}"
+                )
+
+
 def sample(
     key: prng.PRNGKeyArray,
     mean: ArrayLike,

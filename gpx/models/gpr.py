@@ -18,6 +18,7 @@ from ..utils import inverse_softplus, softplus
 from .utils import (
     _check_object_is_callable,
     _check_object_is_type,
+    _check_recursive_dict_type,
     randomized_minimization,
     sample,
 )
@@ -301,7 +302,7 @@ def init(
     else:
         _check_object_is_type(kernel_params, dict, "kernel_params")
         for key in kernel_params.keys():
-            _check_object_is_type(kernel_params[key], Parameter, key)
+            _check_recursive_dict_type(kernel_params[key], Parameter)
 
     if sigma is None:
         sigma = default_params()["sigma"]

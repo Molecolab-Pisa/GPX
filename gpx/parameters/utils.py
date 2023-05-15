@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, Generator
 
 import numpy as np
@@ -13,7 +14,7 @@ def _recursive_traverse_dict(dictionary: Dict) -> Generator[ArrayLike, None, Non
         if isinstance(value, dict):
             yield from _recursive_traverse_dict(value)
         else:
-            yield value
+            yield key, value
 
 
 def _check_same_shape(a: ArrayLike, b: ArrayLike, a_name: str, b_name: str) -> None:
@@ -59,3 +60,74 @@ def _is_numeric(value: Any) -> bool:
         or np.issubdtype(vtype, np.float64)
     )
     return is_unsigned_integer or is_integer or is_float
+
+
+def _flatten_dict(
+    dictionary, flattened=None, starting_key=None, sep=":", map_value=None
+):
+    # instantiate the flattened dictionary
+    if flattened is None:
+        flattened = {}
+
+    # We want to be compatible with a final, empty
+    # dictionary. We use the name 'VOID' to indicate
+    # the empty dictionary
+    if len(dictionary.keys()) == 0:
+        k = f"{starting_key}{sep}NULL" if starting_key else "NULL"
+        flattened[k] = None
+
+    else:
+        for k, v in dictionary.items():
+            k = f"{starting_key}{sep}{k}" if starting_key else k
+            if isinstance(v, dict):
+                _flatten_dict(
+                    dictionary=v,
+                    flattened=flattened,
+                    starting_key=k,
+                    sep=sep,
+                    map_value=map_value,
+                )
+                continue
+
+            flattened[k] = map_value(v) if map_value is not None else v
+
+    return flattened
+
+
+def _unflatten_dict(dictionary, sep=":"):
+    # instantiate the unflattened dictionary
+    unflattened = {}
+
+    for k in dictionary.keys():
+        # Try to retrieve a dictionary key but do not
+        # stop iterating if you're unable to get that
+        try:
+            v = dictionary[k]
+        except ValueError:
+            warnings.warn(f"Unable to retrieve key={k}", stacklevel=2)
+            continue
+
+        # start from top
+        cur_dict = unflattened
+
+        # split into subkeys
+        keys = k.split(sep)
+
+        for subk in keys:
+            # we are at the last key, so we assign the value now
+            if subk is keys[-1]:
+                # NULL identifies an empty dictionary, so we
+                # do nothing
+                if subk == "NULL":
+                    pass
+                else:
+                    cur_dict[subk] = v
+            # Avoid overwriting on existing keys
+            elif subk in cur_dict:
+                cur_dict = cur_dict[subk]
+            # Key not present, so we instantiate a new dict
+            else:
+                cur_dict[subk] = {}
+                cur_dict = cur_dict[subk]
+
+    return unflattened

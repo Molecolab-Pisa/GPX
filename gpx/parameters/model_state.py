@@ -8,11 +8,12 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax._src import prng
+from jax.tree_util import tree_flatten, tree_leaves, tree_unflatten
 from jax.typing import ArrayLike
 from tabulate import tabulate
 
 from .parameter import Parameter
-from .utils import _is_numeric, _recursive_traverse_dict
+from .utils import _flatten_dict, _is_numeric, _recursive_traverse_dict, _unflatten_dict
 
 
 @jax.tree_util.register_pytree_node_class
@@ -69,7 +70,7 @@ class ModelState:
     def _params_priors(
         self, params: Dict[str, Parameter]
     ) -> List["Prior"]:  # noqa: F821
-        return [p.prior for p in _recursive_traverse_dict(params)]
+        return [p.prior for _, p in _recursive_traverse_dict(params)]
 
     @property
     def params_priors(self) -> List["Prior"]:  # noqa: F821
@@ -78,7 +79,7 @@ class ModelState:
     def _params_forward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.forward_transform for p in _recursive_traverse_dict(params)]
+        return [p.forward_transform for _, p in _recursive_traverse_dict(params)]
 
     @property
     def params_forward_transforms(self) -> List[Callable]:
@@ -87,21 +88,21 @@ class ModelState:
     def _params_backward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.backward_transform for p in _recursive_traverse_dict(params)]
+        return [p.backward_transform for _, p in _recursive_traverse_dict(params)]
 
     @property
     def params_backward_transforms(self) -> List[Callable]:
         return self._params_backward_transforms(self.params)
 
     def _params_value(self, params: Dict[str, Parameter]) -> List[Array]:
-        return [p.value for p in _recursive_traverse_dict(params)]
+        return [p.value for _, p in _recursive_traverse_dict(params)]
 
     @property
     def params_value(self) -> List[Array]:
         return self._params_value(self.params)
 
     def _params_trainable(self, params: Dict[str, Parameter]) -> List[Array]:
-        return [p.trainable for p in _recursive_traverse_dict(params)]
+        return [p.trainable for _, p in _recursive_traverse_dict(params)]
 
     @property
     def params_trainable(self) -> List[Array]:
@@ -185,7 +186,10 @@ class ModelState:
                 string_repr(p),
             )
 
-        fields = [["kernel " + k] + list(get_info(p)) for k, p in kernel_params.items()]
+        fields = [
+            ["kernel " + k] + list(get_info(p))
+            for k, p in _recursive_traverse_dict(kernel_params)
+        ]
         fields += [[k] + list(get_info(p)) for k, p in params.items()]
 
         with np.printoptions(edgeitems=0):
@@ -214,11 +218,15 @@ class ModelState:
         # Prepend "params:" or "params:kernel_params:" to identify
         # these as parameters in the saved dictionary
         kernel_params = params.pop("kernel_params")
-        kernel_params = {
-            "params:kernel_params:" + name: value.value
-            for name, value in kernel_params.items()
-        }
-        params = {"params:" + name: value.value for name, value in params.items()}
+        kernel_params = _flatten_dict(
+            kernel_params,
+            starting_key="params:kernel_params",
+            sep=":",
+            map_value=lambda p: p.value,
+        )
+        params = _flatten_dict(
+            params, starting_key="params", sep=":", map_value=lambda p: p.value
+        )
 
         # Join
         params |= kernel_params
@@ -244,58 +252,26 @@ class ModelState:
             new_state: new ModelState instance with values loaded
                        from state_file.
         """
-
-        # auxiliary functions, to be clearer and less verbose
-        # defined here as they only make sense within this method
-        def is_param(p):
-            return "params:" in p
-
-        def is_kernel_param(p):
-            return "params:kernel_params:" in p
-
-        def patch_p_name(p):
-            return p.replace("params:", "")
-
-        def patch_kp_name(p):
-            return p.replace("params:kernel_params:", "")
-
         # Load the new state values
-        new_values = np.load(state_file, allow_pickle=True)
-        new_values = {name: value for name, value in new_values.items()}
+        dumped = np.load(state_file, allow_pickle=True)
+        dumped = {name: value for name, value in dumped.items()}
 
-        # Init dicts for new parameters / optional variables
-        new_params = {}
-        new_params["kernel_params"] = {}
-        new_opts = {}
+        dumped_dict = _unflatten_dict(dumped, sep=":")
+        dumped_params = dumped_dict.pop("params")
 
-        for name, value in new_values.items():
-            if is_kernel_param(name):
-                param = self.params["kernel_params"].get(patch_kp_name(name), None)
-            elif is_param(name):
-                param = self.params.get(patch_p_name(name), None)
-            else:
-                new_opts[name] = value
-                continue
+        # Now they should have the same structure, so this operation
+        # is consistent
+        new_values = tree_leaves(dumped_params)
+        params, params_def = tree_flatten(
+            self.params, is_leaf=lambda p: isinstance(p, Parameter)
+        )
 
-            # Check if the parameter is present in the model state
-            # Since we can only update the value of the parameter,
-            # it needs to be present. Otherwise, we cannot set the
-            # transformation functions etc
-            if param is None:
-                raise ValueError(f"Cannot get parameter {param} from {self}")
+        if len(new_values) != len(params):
+            raise ValueError("Wrong number of parameters in dumped file.")
 
-            # Reconstruct the parameter
-            _, aux = param.tree_flatten()
-            param = param.tree_unflatten(aux, (value,))
-
-            if is_kernel_param(name):
-                new_params["kernel_params"][patch_kp_name(name)] = param
-            elif is_param(name):
-                new_params[patch_p_name(name)] = param
-            else:
-                raise RuntimeError("You should not be here.")
-
-        update_dict = {"params": new_params} | new_opts
+        params = [p.update({"value": v}) for p, v in zip(params, new_values)]
+        params = tree_unflatten(params_def, params)
+        update_dict = {"params": params} | dumped_dict
 
         return self.update(update_dict)
 
