@@ -301,8 +301,7 @@ def init(
 
     else:
         _check_object_is_type(kernel_params, dict, "kernel_params")
-        for key in kernel_params.keys():
-            _check_recursive_dict_type(kernel_params[key], Parameter)
+        _check_recursive_dict_type(kernel_params, Parameter)
 
     if sigma is None:
         sigma = default_params()["sigma"]

@@ -17,6 +17,7 @@ from ..utils import identity, inverse_softplus, softplus
 from .utils import (
     _check_object_is_callable,
     _check_object_is_type,
+    _check_recursive_dict_type,
     randomized_minimization,
 )
 
@@ -139,8 +140,7 @@ def init(
         kernel_params = kernel.default_params()
     else:
         _check_object_is_type(kernel_params, dict, "kernel_params")
-        for pname in kernel_params.keys():
-            _check_object_is_type(kernel_params[pname], Parameter, pname)
+        _check_recursive_dict_type(kernel_params, Parameter)
 
     # inducing points
     _check_object_is_type(inducing_points, Parameter, "inducing_points")
