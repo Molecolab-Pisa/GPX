@@ -10,6 +10,7 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
+from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..optimizers import scipy_minimize
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter
@@ -28,13 +29,14 @@ from .utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=[3, 4])
+@partial(jit, static_argnums=[3, 4, 5])
 def _log_marginal_likelihood(
     params: Dict[str, Parameter],
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
     return_negative: Optional[bool] = False,
+    center_kernel: Optional[bool] = False,
 ) -> Array:
     """log marginal likelihood for standard gaussian process
 
@@ -48,7 +50,14 @@ def _log_marginal_likelihood(
     y = y - y_mean
     m = y.shape[0]
 
-    C_mm = kernel(x, x, kernel_params) + sigma**2 * jnp.eye(m) + 1e-10 * jnp.eye(m)
+    C_mm = kernel(x, x, kernel_params)
+
+    if center_kernel:
+        k_mean = jnp.mean(C_mm, axis=0)
+        C_mm = kernel_center(C_mm, k_mean)
+
+    C_mm = C_mm + sigma**2 * jnp.eye(m) + 1e-10 * jnp.eye(m)
+
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
     cy = jsp.linalg.solve_triangular(L_m, y, lower=True)
 
@@ -86,15 +95,20 @@ def log_marginal_likelihood(
         y=y,
         kernel=state.kernel,
         return_negative=return_negative,
+        center_kernel=state.center_kernel,
     )
 
 
 train_loss = partial(log_marginal_likelihood, return_negative=True)
 
 
-@partial(jit, static_argnums=[3])
+@partial(jit, static_argnums=[3, 4])
 def _fit(
-    params: Dict[str, Parameter], x: ArrayLike, y: ArrayLike, kernel: Callable
+    params: Dict[str, Parameter],
+    x: ArrayLike,
+    y: ArrayLike,
+    kernel: Callable,
+    center_kernel: bool,
 ) -> Tuple[Array, Array]:
     """fits a standard gaussian process
 
@@ -109,14 +123,18 @@ def _fit(
     y_mean = jnp.mean(y)
     y = y - y_mean
 
-    C_mm = (
-        kernel(x, x, kernel_params)
-        + sigma**2 * jnp.eye(y.shape[0])
-        + 1e-10 * jnp.eye(y.shape[0])
-    )
+    C_mm = kernel(x, x, kernel_params)
+
+    if center_kernel:
+        k_mean = jnp.mean(C_mm, axis=0)
+        C_mm = kernel_center(C_mm, k_mean)
+    else:
+        k_mean = None
+
+    C_mm = C_mm + sigma**2 * jnp.eye(y.shape[0]) + 1e-10 * jnp.eye(y.shape[0])
     c = jnp.linalg.solve(C_mm, y).reshape(-1, 1)
 
-    return c, y_mean
+    return c, y_mean, k_mean
 
 
 def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
@@ -133,12 +151,18 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     Returns:
         state: fitted model state
     """
-    c, y_mean = _fit(params=state.params, x=x, y=y, kernel=state.kernel)
-    state = state.update(dict(c=c, y_mean=y_mean, is_fitted=True))
+    c, y_mean, k_mean = _fit(
+        params=state.params,
+        x=x,
+        y=y,
+        kernel=state.kernel,
+        center_kernel=state.center_kernel,
+    )
+    state = state.update(dict(c=c, y_mean=y_mean, k_mean=k_mean, is_fitted=True))
     return state
 
 
-@partial(jit, static_argnums=[5, 6])
+@partial(jit, static_argnums=[5, 6, 7])
 def _predict(
     params: Dict[str, Parameter],
     x_train: ArrayLike,
@@ -147,6 +171,8 @@ def _predict(
     y_mean: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    center_kernel: Optional[bool] = False,
+    k_mean: Optional[ArrayLike] = None,
 ) -> Array:
     """predicts with standard gaussian process
 
@@ -159,15 +185,28 @@ def _predict(
     sigma = params["sigma"].value
 
     K_mn = kernel(x_train, x, kernel_params)
+
+    if center_kernel:
+        k_mean_train_test = K_mn.mean(0)
+        K_mn = kernel_center(K_mn, k_mean)
+
     mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
 
     if full_covariance:
-        C_mm = kernel(x_train, x_train, kernel_params) + sigma**2 * jnp.eye(
-            K_mn.shape[0]
-        )
+        C_mm = kernel(x_train, x_train, kernel_params)
+        if center_kernel:
+            C_mm = kernel_center(C_mm, k_mean)
+
+        C_mm = C_mm + sigma**2 * jnp.eye(K_mn.shape[0])
         L_m = jsp.linalg.cholesky(C_mm, lower=True)
         G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        C_nn = kernel(x, x, kernel_params) - jnp.dot(G_mn.T, G_mn)
+
+        C_nn = kernel(x, x, kernel_params)
+
+        if center_kernel:
+            C_nn = kernel_center_test_test(C_nn, k_mean, k_mean_train_test)
+
+        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
         return mu, C_nn
 
     return mu
@@ -206,6 +245,8 @@ def predict(
         y_mean=state.y_mean,
         kernel=state.kernel,
         full_covariance=full_covariance,
+        center_kernel=state.center_kernel,
+        k_mean=state.k_mean,
     )
 
 
@@ -232,6 +273,11 @@ def sample_prior(
 
     mean = jnp.zeros(x.shape)
     cov = kernel(x, x, kernel_params)
+
+    if state.center_kernel:
+        k_mean = jnp.mean(cov, axis=0)
+        cov = kernel_center(cov, k_mean)
+
     cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
 
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
@@ -282,6 +328,7 @@ def init(
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
     loss_fn: Callable = train_loss,
+    center_kernel: bool = False,
 ) -> ModelState:
     """initializes the model state of a gaussian process
 
@@ -290,6 +337,7 @@ def init(
         kernel_params: kernel parameters
         sigma: standard deviation of gaussian noise
         loss_fn: loss function. Default is negative log marginal likelihood
+        center_kernel: whether to center in feature space
     Returns:
         state: model state
     """
@@ -310,7 +358,14 @@ def init(
         _check_object_is_type(sigma, Parameter, "sigma")
 
     params = {"kernel_params": kernel_params, "sigma": sigma}
-    opt = {"loss_fn": loss_fn, "is_fitted": False, "c": None, "y_mean": None}
+    opt = {
+        "loss_fn": loss_fn,
+        "is_fitted": False,
+        "c": None,
+        "y_mean": None,
+        "center_kernel": center_kernel,
+        "k_mean": None,
+    }
 
     return ModelState(kernel, params, **opt)
 
@@ -321,7 +376,7 @@ def init(
 
 
 class GaussianProcessRegression:
-    _init_default = dict(is_fitted=False, c=None, y_mean=None)
+    _init_default = dict(is_fitted=False, c=None, y_mean=None, k_mean=None)
 
     def __init__(
         self,
@@ -329,6 +384,7 @@ class GaussianProcessRegression:
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = train_loss,
+        center_kernel: bool = False,
     ) -> None:
         """
         Args:
@@ -336,8 +392,15 @@ class GaussianProcessRegression:
             kernel_params: kernel parameters
             sigma: standard deviation of the gaussian noise
             loss_fn: loss function
+            center_kernel: whether to center in feature space
         """
-        self.state = init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
+        self.state = init(
+            kernel=kernel,
+            kernel_params=kernel_params,
+            sigma=sigma,
+            loss_fn=loss_fn,
+            center_kernel=center_kernel,
+        )
 
     @classmethod
     def from_state(cls, state: ModelState) -> "GaussianProcessRegression":
@@ -351,9 +414,16 @@ class GaussianProcessRegression:
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = train_loss,
+        center_kernel: bool = False,
     ) -> ModelState:
         "resets model state"
-        return init(kernel=kernel, kernel_params=kernel_params, sigma=sigma)
+        return init(
+            kernel=kernel,
+            kernel_params=kernel_params,
+            sigma=sigma,
+            loss_fn=loss_fn,
+            center_kernel=center_kernel,
+        )
 
     def default_params(self) -> Dict[str, Parameter]:
         "default model parameters"

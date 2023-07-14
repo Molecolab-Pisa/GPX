@@ -1,4 +1,79 @@
+from __future__ import annotations
+
 from typing import Callable
+
+from jax import Array
+from jax.typing import ArrayLike
+
+
+def kernel_center(k: ArrayLike, k_mean: ArrayLike) -> Array:
+    """Center the kernel
+
+    Center the kernel, which is equivalent to center the input
+    in the space induced by the kernel, e.g.:
+
+        K_centered(x_i, x_j) = (φ(x_i) - φ_mean)^T (φ(x_j) - φ_mean)
+
+    The centering can be computed without knowing φ(x) and φ_mean
+    explicitely:
+
+        K_centered(x_i, x_j) = K(x_i, x_j) - (1/N) Σ_l x_l x_j -
+                               - (1/N) Σ_m x_i x_m +
+                               + (1/N²) Σ_lm x_l x_m
+
+    where N is the number of training points. This means that we can
+    compute it by only knowing the mean over rows or columns of
+    K.
+
+    The present function requires the mean over rows of K, and it can
+    be applied also to transform a kernel matrix evaluated between
+    training points and test ponts (for which you don't want to compute
+    the mean). In this case, the provided kernel matrix must be evaluated
+    as k(x_train, x_test).
+
+    Args:
+        k: kernel matrix, can be evaluated only on x_train,
+           k(x_train, x_train), or can be evaluated between
+           x_train and x_test as k(x_train, x_test)
+        k_mean: mean over the rows of k(x_train, x_train)
+                (e.g., jnp.mean(k, axis=0))
+    Returns:
+        k_centered: centered kernel
+    """
+    return k - k.mean(0)[None, :] - k_mean[:, None] + k_mean.mean()
+
+
+def kernel_center_test_test(
+    k: Array, k_mean_train: ArrayLike, k_mean_train_test
+) -> Array:
+    """Center the kernel using the training mean
+
+    Center the kernel, which is equivalent to center the input
+    in the space induced by the kernel, e.g.:
+
+        K_centered(x_i, x_j) = (φ(x_i) - φ_mean)^T (φ(x_j) - φ_mean)
+
+    Here the centering is performed using the mean over training
+    points. This function should be used to center the kernel
+    evaluated between test points, i.e. k(x_test, x_test)
+
+    Args:
+        k: kernel matrix, can be evaluated only on x_train,
+           k(x_train, x_train), or can be evaluated between
+           x_train and x_test as k(x_train, x_test)
+        k_mean_train: mean over the rows of k(x_train, x_train)
+                (e.g., jnp.mean(k, axis=0))
+        k_mean_train_test: mean over the rows of k(x_train, x_test)
+    Returns:
+        k_centered: centered kernel
+    """
+    return (
+        k
+        - k_mean_train_test[None, :]
+        - k_mean_train_test[:, None]
+        + k_mean_train.mean()
+    )
+
 
 # =============================================================================
 # Kernel Decorator

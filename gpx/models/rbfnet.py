@@ -9,6 +9,7 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
+from ..kernels.operations import kernel_center
 from ..optimizers import optax_minimize, scipy_minimize
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter
@@ -25,15 +26,24 @@ from .utils import (
 GradientTransformation = Any
 
 
-@partial(jit, static_argnums=[3, 4])
+@partial(jit, static_argnums=[3, 4, 5, 6])
 def _train_loss(
     params: Dict[str, Parameter],
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
     output_layer: Callable,
+    center_kernel: bool,
+    k_mean: ArrayLike,
 ) -> Array:
-    y_pred = _predict(params=params, x=x, kernel=kernel, output_layer=output_layer)
+    y_pred, _ = _predict(
+        params=params,
+        x=x,
+        kernel=kernel,
+        output_layer=output_layer,
+        center_kernel=center_kernel,
+        k_mean=k_mean,
+    )
 
     alpha = params["alpha"].value
     weights = params["weights"].value
@@ -52,34 +62,50 @@ def train_loss(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
         y=y,
         kernel=state.kernel,
         output_layer=state.output_layer,
+        center_kernel=state.center_kernel,
+        k_mean=state.k_mean,
     )
 
 
-@partial(jit, static_argnums=[2])
+@partial(jit, static_argnums=[2, 3])
 def _predict_linear(
-    params: Dict[str, Parameter], x: ArrayLike, kernel: Callable
+    params: Dict[str, Parameter],
+    x: ArrayLike,
+    kernel: Callable,
+    center_kernel: bool,
+    k_mean: ArrayLike,
 ) -> Array:
     kernel_params = params["kernel_params"]
     weights = params["weights"].value
     x_inducing = params["inducing_points"].value
 
-    gram = kernel(x, x_inducing, kernel_params)
-    pred = jnp.dot(gram, weights)
+    gram = kernel(x_inducing, x, kernel_params)
 
-    return pred
+    if center_kernel:
+        if k_mean is None:
+            k_mean = jnp.mean(gram, axis=0)
+        gram = kernel_center(gram, k_mean)
+
+    pred = jnp.einsum("ij,io->jo", gram, weights)
+
+    return pred, k_mean
 
 
-@partial(jit, static_argnums=[2, 3])
+@partial(jit, static_argnums=[2, 3, 4])
 def _predict(
     params: Dict[str, Parameter],
     x: ArrayLike,
     kernel: Callable,
     output_layer: Callable,
+    center_kernel: bool,
+    k_mean: ArrayLike,
 ) -> Array:
-    pred = _predict_linear(params=params, x=x, kernel=kernel)
+    pred, k_mean = _predict_linear(
+        params=params, x=x, kernel=kernel, center_kernel=center_kernel, k_mean=k_mean
+    )
     pred = output_layer(pred)
 
-    return pred
+    return pred, k_mean
 
 
 def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array:
@@ -88,6 +114,8 @@ def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array
             params=state.params,
             x=x,
             kernel=state.kernel,
+            center_kernel=state.center_kernel,
+            k_mean=state.k_mean,
         )
     else:
         return _predict(
@@ -95,6 +123,8 @@ def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array
             x=x,
             kernel=state.kernel,
             output_layer=state.output_layer,
+            center_kernel=state.center_kernel,
+            k_mean=state.k_mean,
         )
 
 
@@ -131,6 +161,7 @@ def init(
     alpha: Parameter = None,
     output_layer: Callable = identity,
     loss_fn: Callable = train_loss,
+    center_kernel: bool = False,
 ) -> ModelState:
     # kernel
     _check_object_is_callable(kernel, "kernel")
@@ -163,7 +194,12 @@ def init(
         "kernel_params": kernel_params,
         "weights": weights,
     }
-    opt = {"output_layer": output_layer, "loss_fn": loss_fn}
+    opt = {
+        "output_layer": output_layer,
+        "loss_fn": loss_fn,
+        "center_kernel": center_kernel,
+        "k_mean": jnp.zeros(num_input),
+    }
 
     return ModelState(kernel, params, **opt)
 
@@ -176,7 +212,7 @@ def init(
 class RadialBasisFunctionNetwork:
     "Radial Basis Function Network"
 
-    _init_default = dict(output_layer=identity, loss_fn=train_loss)
+    _init_default = dict(output_layer=identity, loss_fn=train_loss, center_kernel=False)
 
     def __init__(
         self,
@@ -188,6 +224,7 @@ class RadialBasisFunctionNetwork:
         alpha: Parameter = None,
         output_layer: Callable = identity,
         loss_fn: Callable = train_loss,
+        center_kernel: Optional[bool] = False,
     ) -> None:
         """
         Args:
@@ -219,6 +256,7 @@ class RadialBasisFunctionNetwork:
             loss_fn: loss function used to optimize the model parameters.
                      by default, it minimizes the squared error plus the L2
                      regularization term.
+            center_kernel: whether to center in feature space
         """
         self.state = init(
             key=key,
@@ -229,7 +267,14 @@ class RadialBasisFunctionNetwork:
             alpha=alpha,
             output_layer=output_layer,
             loss_fn=loss_fn,
+            center_kernel=center_kernel,
         )
+
+    @classmethod
+    def from_state(cls, state: ModelState) -> "RadialBasisFunctionNetwork":
+        self = cls.__new__(cls)
+        self.state = state
+        return self
 
     def init(
         self,
@@ -241,6 +286,7 @@ class RadialBasisFunctionNetwork:
         alpha: Parameter = None,
         output_layer: Callable = identity,
         loss_fn: Callable = train_loss,
+        center_kernel: bool = False,
     ) -> ModelState:
         "resets model state"
         return init(
@@ -252,13 +298,8 @@ class RadialBasisFunctionNetwork:
             alpha=alpha,
             output_layer=output_layer,
             loss_fn=loss_fn,
+            center_kernel=center_kernel,
         )
-
-    @classmethod
-    def from_state(cls, state: ModelState) -> "RadialBasisFunctionNetwork":
-        self = cls.__new__(cls)
-        self.state = state
-        return self
 
     def default_params(
         self, key: prng.PRNGKeyArray, num_input: int, num_output: int
@@ -279,6 +320,7 @@ class RadialBasisFunctionNetwork:
         return_history: Optional[bool] = False,
     ) -> Self:
         minimization_function = scipy_minimize
+        self.state = self.state.update({"k_mean": None})
         self.state, optres, *history = randomized_minimization(
             key=key,
             state=self.state,
@@ -291,6 +333,8 @@ class RadialBasisFunctionNetwork:
         self.optimize_results_ = optres
         self.x_train = x
         self.y_train = y
+        _, k_mean = predict(self.state, x=x)
+        self.state = self.state.update({"k_mean": k_mean})
         if return_history:
             self.states_history_ = history[0]
             self.losses_history_ = history[1]
@@ -312,6 +356,7 @@ class RadialBasisFunctionNetwork:
         return_history: int = False,
     ) -> Self:
         minimization_function = optax_minimize
+        self.state = self.state.update({"k_mean": None})
         self.state, opt_state, epochs_history, *history = randomized_minimization(
             key=key,
             state=self.state,
@@ -334,6 +379,8 @@ class RadialBasisFunctionNetwork:
         self.optax_history_ = epochs_history
         self.x_train = x
         self.y_train = y
+        _, k_mean = predict(self.state, x=x)
+        self.state = self.state.update({"k_mean": k_mean})
         if return_history:
             self.states_history_ = history[0]
             self.losses_history_ = history[1]
@@ -341,7 +388,8 @@ class RadialBasisFunctionNetwork:
         return self
 
     def predict(self, x: ArrayLike, linear_only: bool = False) -> Array:
-        return predict(self.state, x=x, linear_only=linear_only)
+        pred, _ = predict(self.state, x=x, linear_only=linear_only)
+        return pred
 
     def save(self, state_file: str) -> Dict:
         """saves the model state values to file"""
