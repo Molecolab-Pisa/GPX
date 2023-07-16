@@ -5,6 +5,10 @@ from typing import Callable
 from jax import Array
 from jax.typing import ArrayLike
 
+# =============================================================================
+# Kernel Centering
+# =============================================================================
+
 
 def kernel_center(k: ArrayLike, k_mean: ArrayLike) -> Array:
     """Center the kernel
@@ -29,7 +33,7 @@ def kernel_center(k: ArrayLike, k_mean: ArrayLike) -> Array:
     be applied also to transform a kernel matrix evaluated between
     training points and test ponts (for which you don't want to compute
     the mean). In this case, the provided kernel matrix must be evaluated
-    as k(x_train, x_test).
+    as k(x_train, x_test), *not* as k(x_test, x_train).
 
     Args:
         k: kernel matrix, can be evaluated only on x_train,
