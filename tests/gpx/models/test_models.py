@@ -3,6 +3,7 @@ import pytest
 from jax import random
 
 from gpx.kernels import SquaredExponential
+from gpx.mean_functions import data_mean, zero_mean
 from gpx.models import GPR, SGPR, RBFNet
 from gpx.parameters import ModelState, Parameter
 from gpx.priors import NormalPrior
@@ -98,6 +99,7 @@ def create_rbfnet_model():
 def create_model_state():
     state_gpr = ModelState(
         kernel=SquaredExponential(),
+        mean_function=data_mean,
         params={
             "kernel_params": {
                 "lengthscale": Parameter(
@@ -111,6 +113,7 @@ def create_model_state():
     X_locs = random.normal(random.PRNGKey(2023), shape=(10, 1))
     state_sgpr = ModelState(
         kernel=SquaredExponential(),
+        mean_function=zero_mean,
         params={
             "kernel_params": {
                 "lengthscale": Parameter(
@@ -127,6 +130,7 @@ def create_model_state():
     I_points = random.normal(random.PRNGKey(2023), shape=(10, 1))
     state_rbfnet = ModelState(
         kernel=SquaredExponential(),
+        mean_function=data_mean,
         params={
             "alpha": Parameter(1.0, True, softplus, inverse_softplus, NormalPrior()),
             "inducing_points": Parameter(

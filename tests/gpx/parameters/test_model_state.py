@@ -5,6 +5,7 @@ from jax import random
 from numpy.testing import assert_equal
 
 from gpx.kernels import SquaredExponential
+from gpx.mean_functions import data_mean
 from gpx.parameters import ModelState, Parameter
 from gpx.priors import NormalPrior
 from gpx.utils import inverse_softplus, softplus
@@ -13,6 +14,7 @@ from gpx.utils import inverse_softplus, softplus
 def create_model_state():
     state = ModelState(
         kernel=SquaredExponential(),
+        mean_function=data_mean,
         params={
             "kernel_params": {
                 "lengthscale": Parameter(

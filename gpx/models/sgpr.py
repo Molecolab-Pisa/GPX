@@ -11,6 +11,7 @@ from jax.typing import ArrayLike
 from typing_extensions import Self
 
 from ..kernels.operations import kernel_center, kernel_center_test_test
+from ..mean_functions import data_mean
 from ..optimizers import scipy_minimize
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter
@@ -35,6 +36,7 @@ def _log_marginal_likelihood(
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
+    mean_function: Callable,
     return_negative: Optional[bool] = False,
     center_kernel: Optional[bool] = False,
 ) -> Array:
@@ -49,10 +51,10 @@ def _log_marginal_likelihood(
     sigma = params["sigma"].value
     x_locs = params["x_locs"].value
 
-    y_mean = jnp.mean(y)
-    y = y - y_mean
-    n = y.shape[0]
     m = x_locs.shape[0]
+    mu = mean_function(y)
+    y = y - mu
+    n = y.shape[0]
 
     K_mm = kernel(x_locs, x_locs, kernel_params)
     K_mn = kernel(x_locs, x, kernel_params)
@@ -103,6 +105,7 @@ def log_marginal_likelihood(
         x=x,
         y=y,
         kernel=state.kernel,
+        mean_function=state.mean_function,
         return_negative=return_negative,
         center_kernel=state.center_kernel,
     )
@@ -117,11 +120,12 @@ def _fit(
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
+    mean_function: Callable,
     center_kernel: bool,
 ) -> Tuple[Array, Array]:
     """fits a SGPR (projected processes)
 
-    y_mean = (1/n) Σ_i y_i
+    μ = m(y)
 
     c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
 
@@ -130,8 +134,8 @@ def _fit(
     sigma = params["sigma"].value
     x_locs = params["x_locs"].value
 
-    y_mean = jnp.mean(y)
-    y = y - y_mean
+    mu = mean_function(y)
+    y = y - mu
 
     K_mn = kernel(x_locs, x, kernel_params)
 
@@ -148,13 +152,13 @@ def _fit(
     C_mm = sigma**2 * C_mm + jnp.dot(K_mn, K_mn.T) + 1e-10 * jnp.eye(x_locs.shape[0])
     c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
 
-    return c, y_mean, k_mean
+    return c, mu, k_mean
 
 
 def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     """fits a SGPR (projected processes)
 
-        y_mean = (1/n) Σ_i y_i
+        μ = m(y)
 
         c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
 
@@ -165,14 +169,15 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     Returns:
         state: fitted model state
     """
-    c, y_mean, k_mean = _fit(
+    c, mu, k_mean = _fit(
         params=state.params,
         x=x,
         y=y,
         kernel=state.kernel,
+        mean_function=state.mean_function,
         center_kernel=state.center_kernel,
     )
-    state = state.update(dict(c=c, y_mean=y_mean, k_mean=k_mean, is_fitted=True))
+    state = state.update(dict(c=c, mu=mu, k_mean=k_mean, is_fitted=True))
     return state
 
 
@@ -181,7 +186,7 @@ def _predict(
     params: Dict[str, Parameter],
     x: ArrayLike,
     c: ArrayLike,
-    y_mean: ArrayLike,
+    mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
     center_kernel: Optional[bool] = False,
@@ -204,7 +209,7 @@ def _predict(
         k_mean_train_test = jnp.mean(K_mn, axis=0)
         K_mn = kernel_center(K_mn, k_mean)
 
-    mu = jnp.dot(c.T, K_mn).reshape(-1, 1) + y_mean
+    mu = mu + jnp.dot(c.T, K_mn).reshape(-1, 1)
 
     if full_covariance:
         m = x_locs.shape[0]
@@ -255,7 +260,7 @@ def predict(
         params=state.params,
         x=x,
         c=state.c,
-        y_mean=state.y_mean,
+        mu=state.mu,
         kernel=state.kernel,
         full_covariance=full_covariance,
         center_kernel=state.center_kernel,
@@ -334,7 +339,8 @@ def default_params() -> Dict[str, Parameter]:
 
 def init(
     kernel: Callable,
-    x_locs: Parameter,
+    mean_function: Callable = data_mean,
+    x_locs: Parameter = None,
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
     loss_fn: Callable = train_loss,
@@ -371,12 +377,12 @@ def init(
         "loss_fn": loss_fn,
         "is_fitted": False,
         "c": None,
-        "y_mean": None,
+        "mu": None,
         "center_kernel": center_kernel,
         "k_mean": None,
     }
 
-    return ModelState(kernel, params, **opt)
+    return ModelState(kernel, mean_function, params, **opt)
 
 
 # =============================================================================
@@ -390,7 +396,8 @@ class SparseGaussianProcessRegression:
     def __init__(
         self,
         kernel: Callable,
-        x_locs: Parameter,
+        mean_function: Callable = data_mean,
+        x_locs: Parameter = None,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = train_loss,
@@ -407,6 +414,7 @@ class SparseGaussianProcessRegression:
         """
         self.state = init(
             kernel=kernel,
+            mean_function=mean_function,
             kernel_params=kernel_params,
             sigma=sigma,
             x_locs=x_locs,
@@ -422,7 +430,8 @@ class SparseGaussianProcessRegression:
     def init(
         self,
         kernel: Callable,
-        x_locs: Parameter,
+        mean_function: Callable = data_mean,
+        x_locs: Parameter = None,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = train_loss,
@@ -431,6 +440,7 @@ class SparseGaussianProcessRegression:
         "resets model state"
         return init(
             kernel=kernel,
+            mean_function=mean_function,
             kernel_params=kernel_params,
             sigma=sigma,
             x_locs=x_locs,
@@ -478,9 +488,9 @@ class SparseGaussianProcessRegression:
     ) -> Self:
         """fits a SGPR (projected processes)
 
-            y_mean = (1/n) Σ_i y_i
+            μ = m(y)
 
-            c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+            c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn (y - mu)
 
         Args:
             x: observations
@@ -490,9 +500,17 @@ class SparseGaussianProcessRegression:
             num_restarts: number of restarts with randomization to do.
                           If 0, the model is fitted once without any randomization.
 
-        Notes: randomized_minimization requires to optimize the log marginal likelihood.
-               In order to optimize with randomized restarts you need to provide a valid
-               JAX PRNGKey.
+        Notes:
+
+        (1) m(y) is the mean function of the real distribution of data. By default,
+            we don't make assumptions on the mean of the prior distribution, so it
+            is set to the mean value of the input y:
+
+                 μ = (1/n) Σ_i y_i.
+
+        (2) Randomized_minimization requires to optimize the log marginal likelihood.
+            In order to optimize with randomized restarts you need to provide a valid
+            JAX PRNGKey.
         """
         if minimize_lml:
             minimization_function = scipy_minimize
@@ -510,7 +528,7 @@ class SparseGaussianProcessRegression:
         self.state = fit(self.state, x=x, y=y)
 
         self.c_ = self.state.c
-        self.y_mean_ = self.state.y_mean
+        self.mu_ = self.state.mu
         self.x_locs_ = self.state.params["x_locs"].value
         self.x_train = x
         self.y_train = y

@@ -201,7 +201,7 @@ def init(
         "k_mean": jnp.zeros(num_input),
     }
 
-    return ModelState(kernel, params, **opt)
+    return ModelState(kernel=kernel, mean_function=None, params=params, **opt)
 
 
 # =============================================================================

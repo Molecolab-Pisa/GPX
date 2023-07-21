@@ -19,9 +19,14 @@ from .utils import _flatten_dict, _is_numeric, _recursive_traverse_dict, _unflat
 @jax.tree_util.register_pytree_node_class
 class ModelState:
     def __init__(
-        self, kernel: Callable, params: Dict[str, Parameter], **kwargs: Any
+        self,
+        kernel: Callable,
+        mean_function: Callable,
+        params: Dict[str, Parameter],
+        **kwargs: Any,
     ) -> None:
         self.kernel = kernel
+        self.mean_function = mean_function
         self.params = params
 
         self._register = []
@@ -35,7 +40,7 @@ class ModelState:
         self._register.append(entry)
 
     def __repr__(self) -> str:
-        rep = f"{self.__class__.__name__}(kernel={self.kernel}, params={self.params})"
+        rep = f"{self.__class__.__name__}(kernel={self.kernel}, mean_function={self.mean_function}, params={self.params})"  # noqa: E501
         if len(self._register) != 0:
             rep = rep[:-1]
             for entry in self._register:
@@ -47,9 +52,18 @@ class ModelState:
     def kernel(self) -> Callable:
         return self._kernel
 
+    # TODO Edo: is this really important?
     @kernel.setter
     def kernel(self, k: Callable) -> None:
         self._kernel = k
+
+    @property
+    def mean_function(self) -> Callable:
+        return self._mean_function
+
+    @mean_function.setter
+    def mean_function(self, m: Callable) -> None:
+        self._mean_function = m
 
     @property
     def params(self) -> Dict[str, Parameter]:
@@ -126,19 +140,25 @@ class ModelState:
 
         return (params_value), (
             self.kernel,
+            self.mean_function,
             self._params_structure,
             opt,
         )
 
     @classmethod
     def tree_unflatten(cls, aux_data: Any, children: ArrayLike) -> "ModelState":
-        kernel, params_structure, opt = aux_data
+        kernel, mean_function, params_structure, opt = aux_data
         params = jax.tree_util.tree_unflatten(params_structure, children)
-        return cls(kernel, params, **opt)
+        return cls(kernel, mean_function, params, **opt)
 
     def update(self, update_dict):
         kernel = (
             update_dict.pop("kernel") if "kernel" in update_dict.keys() else self.kernel
+        )
+        mean_function = (
+            update_dict.pop("mean_function")
+            if "mean_function" in update_dict.keys()
+            else self.mean_function
         )
         params = (
             update_dict.pop("params") if "params" in update_dict.keys() else self.params
@@ -146,7 +166,7 @@ class ModelState:
         opt = {entry: getattr(self, entry) for entry in self._register}
         for key, val in update_dict.items():
             opt[key] = val
-        return self.__class__(kernel, params, **opt)
+        return self.__class__(kernel, mean_function, params, **opt)
 
     def __copy__(self) -> "ModelState":
         return self.update({})
