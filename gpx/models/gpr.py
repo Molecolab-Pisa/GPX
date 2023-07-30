@@ -161,7 +161,9 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
         mean_function=state.mean_function,
         center_kernel=state.center_kernel,
     )
-    state = state.update(dict(c=c, mu=mu, k_mean=k_mean, is_fitted=True))
+    state = state.update(
+        dict(x_train=x, y_train=y, c=c, mu=mu, k_mean=k_mean, is_fitted=True)
+    )
     return state
 
 
@@ -217,7 +219,6 @@ def _predict(
 
 def predict(
     state: ModelState,
-    x_train: ArrayLike,
     x: ArrayLike,
     full_covariance: Optional[bool] = False,
 ) -> Array:
@@ -242,7 +243,7 @@ def predict(
         )
     return _predict(
         params=state.params,
-        x_train=x_train,
+        x_train=state.x_train,
         x=x,
         c=state.c,
         mu=state.mu,
@@ -364,6 +365,8 @@ def init(
 
     params = {"kernel_params": kernel_params, "sigma": sigma}
     opt = {
+        "x_train": None,
+        "y_train": None,
         "loss_fn": loss_fn,
         "is_fitted": False,
         "c": None,
@@ -538,7 +541,7 @@ class GaussianProcessRegression:
                 f"{class_name} is not fitted yet."
                 "Call 'fit' before using this model for prediction."
             )
-        return predict(self.state, self.x_train, x=x, full_covariance=full_covariance)
+        return predict(self.state, x=x, full_covariance=full_covariance)
 
     def sample(
         self,
@@ -576,6 +579,10 @@ class GaussianProcessRegression:
     def load(self, state_file: str) -> Self:
         """loads the model state values from file"""
         self.state = self.state.load(state_file)
+        self.c_ = self.state.c
+        self.mu_ = self.state.mu
+        self.x_train = self.state.x_train
+        self.y_train = self.state.y_train
         return self
 
     def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True) -> Self:

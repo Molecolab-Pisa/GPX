@@ -177,7 +177,9 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
         mean_function=state.mean_function,
         center_kernel=state.center_kernel,
     )
-    state = state.update(dict(c=c, mu=mu, k_mean=k_mean, is_fitted=True))
+    state = state.update(
+        dict(x_train=x, y_train=y, c=c, mu=mu, k_mean=k_mean, is_fitted=True)
+    )
     return state
 
 
@@ -589,6 +591,10 @@ class SparseGaussianProcessRegression:
     def load(self, state_file: str) -> Self:
         """loads the model state values from file"""
         self.state = self.state.load(state_file)
+        self.c_ = self.state.c
+        self.mu_ = self.state.mu
+        self.x_train = self.state.x_train
+        self.y_train = self.state.y_train
         return self
 
     def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True) -> Self:

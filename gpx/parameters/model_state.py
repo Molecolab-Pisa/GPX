@@ -253,7 +253,13 @@ class ModelState:
 
         # Get the auxiliary attributes
         for opt in self._register:
-            params[opt] = getattr(self, opt)
+            aux_opt = getattr(self, opt)
+
+            # do not dump callables
+            if callable(aux_opt):
+                continue
+
+            params[opt] = aux_opt
 
         # Dump
         np.savez(state_file, **params)
@@ -277,6 +283,9 @@ class ModelState:
         dumped = {name: value for name, value in dumped.items()}
 
         dumped_dict = _unflatten_dict(dumped, sep=":")
+
+        # =============================================
+        # Parameters are handled here
         dumped_params = dumped_dict.pop("params")
 
         # Now they should have the same structure, so this operation
@@ -291,6 +300,20 @@ class ModelState:
 
         params = [p.update({"value": v}) for p, v in zip(params, new_values)]
         params = tree_unflatten(params_def, params)
+        # =============================================
+
+        # =============================================
+        # Check on optional/auxiliary data happen here
+        for name, value in dumped_dict.items():
+            # identify booleans
+            if np.issubdtype(value.dtype, np.bool_) and value.ndim == 0:
+                dumped_dict[name] = value.item()
+
+            # identify None types
+            elif value.ndim == 0:
+                dumped_dict[name] = None if value.item() is None else value
+        # =============================================
+
         update_dict = {"params": params} | dumped_dict
 
         return self.update(update_dict)
