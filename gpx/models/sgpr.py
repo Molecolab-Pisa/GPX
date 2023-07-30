@@ -30,7 +30,7 @@ from .utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=[3, 4, 5])
+@partial(jit, static_argnums=[3, 4, 5, 6])
 def _log_marginal_likelihood(
     params: Dict[str, Parameter],
     x: ArrayLike,
@@ -114,7 +114,7 @@ def log_marginal_likelihood(
 train_loss = partial(log_marginal_likelihood, return_negative=True)
 
 
-@partial(jit, static_argnums=[3, 4])
+@partial(jit, static_argnums=[3, 4, 5])
 def _fit(
     params: Dict[str, Parameter],
     x: ArrayLike,
