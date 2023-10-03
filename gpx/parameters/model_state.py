@@ -8,12 +8,17 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax._src import prng
-from jax.tree_util import tree_flatten, tree_leaves, tree_unflatten
+from jax.tree_util import (
+    tree_flatten,
+    tree_leaves,
+    tree_leaves_with_path,
+    tree_unflatten,
+)
 from jax.typing import ArrayLike
 from tabulate import tabulate
 
-from .parameter import Parameter
-from .utils import _flatten_dict, _is_numeric, _recursive_traverse_dict, _unflatten_dict
+from .parameter import Parameter, is_parameter
+from .utils import _flatten_dict, _is_numeric, _unflatten_dict
 
 
 @jax.tree_util.register_pytree_node_class
@@ -84,7 +89,7 @@ class ModelState:
     def _params_priors(
         self, params: Dict[str, Parameter]
     ) -> List["Prior"]:  # noqa: F821
-        return [p.prior for _, p in _recursive_traverse_dict(params)]
+        return [p.prior for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_priors(self) -> List["Prior"]:  # noqa: F821
@@ -93,7 +98,7 @@ class ModelState:
     def _params_forward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.forward_transform for _, p in _recursive_traverse_dict(params)]
+        return [p.forward_transform for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_forward_transforms(self) -> List[Callable]:
@@ -102,21 +107,21 @@ class ModelState:
     def _params_backward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.backward_transform for _, p in _recursive_traverse_dict(params)]
+        return [p.backward_transform for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_backward_transforms(self) -> List[Callable]:
         return self._params_backward_transforms(self.params)
 
     def _params_value(self, params: Dict[str, Parameter]) -> List[Array]:
-        return [p.value for _, p in _recursive_traverse_dict(params)]
+        return [p.value for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_value(self) -> List[Array]:
         return self._params_value(self.params)
 
     def _params_trainable(self, params: Dict[str, Parameter]) -> List[Array]:
-        return [p.trainable for _, p in _recursive_traverse_dict(params)]
+        return [p.trainable for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_trainable(self) -> List[Array]:
@@ -206,10 +211,12 @@ class ModelState:
                 string_repr(p),
             )
 
-        fields = [
-            ["kernel " + k] + list(get_info(p))
-            for k, p in _recursive_traverse_dict(kernel_params)
-        ]
+        fields = []
+        for k, p in tree_leaves_with_path(kernel_params, is_leaf=is_parameter):
+            # name = "kernel " + ':'.join([sk.key for sk in k])
+            name = "kernel " + k[-1].key
+            fields.append([name] + list(get_info(p)))
+
         fields += [[k] + list(get_info(p)) for k, p in params.items()]
 
         with np.printoptions(edgeitems=0):

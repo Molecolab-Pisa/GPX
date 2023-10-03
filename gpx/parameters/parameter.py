@@ -101,3 +101,8 @@ class Parameter:
         sample = self.forward_transform(sample)
         update_dict = dict(value=sample)
         return self.update(update_dict)
+
+
+def is_parameter(p: Any) -> bool:
+    "True if p is a Parameter instance, False otherwise"
+    return isinstance(p, Parameter)

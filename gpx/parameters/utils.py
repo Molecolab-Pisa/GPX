@@ -1,20 +1,11 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Dict, Generator
+from typing import Any
 
 import numpy as np
 from jax import Array
 from jax.typing import ArrayLike
-
-
-def _recursive_traverse_dict(dictionary: Dict) -> Generator[ArrayLike, None, None]:
-    for key in dictionary.keys():
-        value = dictionary[key]
-        if isinstance(value, dict):
-            yield from _recursive_traverse_dict(value)
-        else:
-            yield key, value
 
 
 def _check_same_shape(a: ArrayLike, b: ArrayLike, a_name: str, b_name: str) -> None:
