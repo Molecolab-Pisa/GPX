@@ -4,6 +4,7 @@ from .kernels import (
     Matern12,
     Matern32,
     Matern52,
+    Polynomial,
     Prod,
     SquaredExponential,
     Sum,
@@ -17,6 +18,8 @@ from .kernels import (
     matern12_kernel_base,
     matern32_kernel_base,
     matern52_kernel_base,
+    poly_kernel,
+    polynomial_kernel_base,
     se_kernel,
     squared_exponential_kernel_base,
 )

@@ -6,7 +6,13 @@ from jax.typing import ArrayLike
 
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
-from ..utils import euclidean_distance, inverse_softplus, softplus, squared_distances
+from ..utils import (
+    euclidean_distance,
+    identity,
+    inverse_softplus,
+    softplus,
+    squared_distances,
+)
 from .kernelizers import grad_kernelize, kernelize
 from .operations import (
     prod_kernels,
@@ -73,6 +79,35 @@ def _linear_kernel(x1: ArrayLike, x2: ArrayLike) -> Array:
 @jit
 def linear_kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]) -> Array:
     return _linear_kernel(x1, x2)
+
+
+# =============================================================================
+# Polynomial Kernel
+# =============================================================================
+
+
+def _polynomial_kernel_base(x1: ArrayLike, x2: ArrayLike, degree: int) -> Array:
+    return jnp.dot(x1, x2) ** degree
+
+
+@jit
+def polynomial_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    degree = params["degree"].value
+    return _polynomial_kernel_base(x1, x2, degree)
+
+
+def _polynomial_kernel(x1: ArrayLike, x2: ArrayLike, degree: int) -> Array:
+    return (x1 @ x2.T) ** degree
+
+
+@jit
+def polynomial_kernel(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    degree = params["degree"].value
+    return _polynomial_kernel(x1, x2, degree)
 
 
 # =============================================================================
@@ -227,6 +262,7 @@ def matern52_kernel(
 
 const_kernel = constant_kernel
 lin_kernel = linear_kernel
+poly_kernel = polynomial_kernel
 se_kernel = squared_exponential_kernel
 m12_kernel = matern12_kernel
 m32_kernel = matern32_kernel
@@ -475,6 +511,25 @@ class Linear(Kernel):
 
     def default_params(self):
         return dict()
+
+
+class Polynomial(Kernel):
+    def __init__(self, active_dims: ArrayLike = None) -> None:
+        self._kernel_base = polynomial_kernel_base
+        super().__init__(active_dims)
+        # faster version for evaluating k
+        self.k = self.filter_input(polynomial_kernel, self.active_dims)
+
+    def default_params(self):
+        return dict(
+            degree=Parameter(
+                value=2.0,
+                trainable=False,
+                forward_transform=identity,
+                backward_transform=identity,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            )
+        )
 
 
 class SquaredExponential(Kernel):
