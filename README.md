@@ -39,10 +39,10 @@ pip install --upgrade pip
 ```
 
 ```shell
-pip install "jax[cuda11_cudnn82]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
-For more information refer to [JAX installation on GPU (CUDA)](https://github.com/google/jax#pip-installation-gpu-cuda)
+For more information refer to [JAX installation on GPU (CUDA)](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu)
 
 #### GPX installation
 
