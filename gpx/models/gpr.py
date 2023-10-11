@@ -291,7 +291,6 @@ def sample_prior(
 def sample_posterior(
     key: prng.PRNGKeyArray,
     state: ModelState,
-    x_train: ArrayLike,
     x: ArrayLike,
     n_samples: Optional[int] = 1,
 ) -> Array:
@@ -300,7 +299,6 @@ def sample_posterior(
     Args:
         key: JAX PRNGKey
         state: model state
-        x_train: train observations
         x: observations
         n_samples: number of samples to draw
 
@@ -311,7 +309,7 @@ def sample_posterior(
         raise RuntimeError(
             "Cannot sample from the posterior if the model is not fitted"
         )
-    mean, cov = predict(state, x_train=x_train, x=x, full_covariance=True)
+    mean, cov = predict(state, x=x, full_covariance=True)
     cov += 1e-10 * jnp.eye(cov.shape[0])
 
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
@@ -564,9 +562,7 @@ class GaussianProcessRegression:
         if kind == "prior":
             return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
         elif kind == "posterior":
-            return sample_posterior(
-                key, state=self.state, x_train=self.x_train, x=x, n_samples=n_samples
-            )
+            return sample_posterior(key, state=self.state, x=x, n_samples=n_samples)
         else:
             raise ValueError(
                 f"kind can be either 'prior' or 'posterior', you provided {kind}"
