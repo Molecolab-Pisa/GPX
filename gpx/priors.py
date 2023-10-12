@@ -14,19 +14,53 @@ from jax.typing import ArrayLike
 # ============================================================================
 
 
-def normal_prior(
+def normal_sample(
     key: prng.PRNGKeyArray,
     loc: ArrayLike = 0.0,
     scale: ArrayLike = 1.0,
     shape: Tuple = (),
     dtype: Any = jnp.float64,
 ) -> Array:
-    """samples from a normal prior
+    """samples from a normal distribution
 
-    loc is the mean of the distribution
-    scale is the standard deviation of the distribution
+        p(θ) = ( 1/(2πσ²)^½ ) e^( -(θ-μ)²/(2σ²) )
+
+    Args:
+        key: PRNGKey
+        loc: mean of the distribution
+        scale: standard deviation of the distribution
+        shape: shape of the sample
+        dtype: dtype of the sample
+
+    Returns:
+        sample: sample from the normal distribution
     """
     return loc + scale * random.normal(key=key, shape=shape, dtype=dtype)
+
+
+def normal_logpdf(
+    x: ArrayLike,
+    loc: ArrayLike = 0.0,
+    scale: ArrayLike = 1.0,
+):
+    """
+    Evaluates the log pdf of the normal distribution
+
+        log p(θ) = - log(σ) - ½log(2π) - (1/(2σ²)) (θ - μ)²
+
+    Args:
+        x: input point
+        loc: mean of the distribution
+        scale: standard deviation of the distribution
+
+    Returns:
+        logpdf: log probability density function evaluated at x
+    """
+    return (
+        -jnp.log(scale)
+        - 0.5 * jnp.log(2 * jnp.pi)
+        - 0.5 * (1.0 / scale**2) * (x - loc) ** 2
+    )
 
 
 # ============================================================================
@@ -66,6 +100,10 @@ class Prior(ABC):
     @abstractmethod
     def sample(self, key: prng.PRNGKeyArray) -> Array:
         "sample from the prior"
+
+    @abstractmethod
+    def logpdf(self, x: ArrayLike) -> Array:
+        "evaluate the log pdf"
 
     def __call__(self, key: prng.PRNGKeyArray) -> Array:
         return self.sample(key)
@@ -122,6 +160,9 @@ class NormalPrior(Prior):
         )
 
     def sample(self, key: prng.PRNGKeyArray) -> Array:
-        return normal_prior(
+        return normal_sample(
             key, loc=self.loc, scale=self.scale, shape=self.shape, dtype=self.dtype
         )
+
+    def logpdf(self, x: ArrayLike) -> Array:
+        return normal_logpdf(x=x, loc=self.loc, scale=self.scale)
