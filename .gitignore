@@ -8,3 +8,4 @@ __pycache__/
 dev_notebooks/
 TODO.md
 .tox/
+.jupyter_ystore.db
