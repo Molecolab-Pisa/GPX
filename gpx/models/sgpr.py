@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Callable, Dict, Optional, Tuple
 
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import Array, jit
@@ -14,7 +15,7 @@ from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..mean_functions import data_mean
 from ..optimizers import scipy_minimize
 from ..parameters.model_state import ModelState
-from ..parameters.parameter import Parameter
+from ..parameters.parameter import Parameter, is_parameter
 from ..priors import NormalPrior
 from ..utils import inverse_softplus, softplus
 from .utils import (
@@ -30,14 +31,13 @@ from .utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=[3, 4, 5, 6])
+@partial(jit, static_argnums=[3, 4, 5])
 def _log_marginal_likelihood(
     params: Dict[str, Parameter],
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
     mean_function: Callable,
-    return_negative: Optional[bool] = False,
     center_kernel: Optional[bool] = False,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
@@ -74,9 +74,6 @@ def _log_marginal_likelihood(
     mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
     mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
 
-    if return_negative:
-        return -mll
-
     return mll
 
 
@@ -84,7 +81,6 @@ def log_marginal_likelihood(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
-    return_negative: Optional[bool] = False,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -96,7 +92,6 @@ def log_marginal_likelihood(
         state: model state
         x: observations
         y: labels
-        return_negative: whether to return the negative of the lml
     Returns:
         lml: log marginal likelihood
     """
@@ -106,12 +101,39 @@ def log_marginal_likelihood(
         y=y,
         kernel=state.kernel,
         mean_function=state.mean_function,
-        return_negative=return_negative,
         center_kernel=state.center_kernel,
     )
 
 
-train_loss = partial(log_marginal_likelihood, return_negative=True)
+def log_prior(state: ModelState) -> Array:
+    "Computes the log p(θ) assuming independence of θ"
+    return jax.tree_util.tree_reduce(
+        lambda init, p: init + p.prior.logpdf(p.value),
+        state.params,
+        initializer=0.0,
+        is_leaf=is_parameter,
+    )
+
+
+def log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+    """Computes the log posterior
+
+        log p(θ|y) = log p(y|θ) + log p(θ)
+
+    where log p(y|θ) is the log marginal likelihood.
+    it is assumed that hyperparameters θ are independent.
+    """
+    return log_marginal_likelihood(state=state, x=x, y=y) + log_prior(state=state)
+
+
+def neg_log_marginal_likelihood(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+    "Returns the negative log marginal likelihood"
+    return -log_marginal_likelihood(state=state, x=x, y=y)
+
+
+def neg_log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+    "Returns the negative log posterior"
+    return -log_posterior(state=state, x=x, y=y)
 
 
 @partial(jit, static_argnums=[3, 4, 5])
@@ -345,7 +367,7 @@ def init(
     x_locs: Parameter = None,
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
-    loss_fn: Callable = train_loss,
+    loss_fn: Callable = neg_log_marginal_likelihood,
     center_kernel: bool = False,
 ) -> ModelState:
     """initializes the model state of a SGPR (projected processes)
@@ -402,7 +424,7 @@ class SparseGaussianProcessRegression:
         x_locs: Parameter = None,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
-        loss_fn: Callable = train_loss,
+        loss_fn: Callable = neg_log_marginal_likelihood,
         center_kernel: bool = False,
     ) -> None:
         """
@@ -436,7 +458,7 @@ class SparseGaussianProcessRegression:
         x_locs: Parameter = None,
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
-        loss_fn: Callable = train_loss,
+        loss_fn: Callable = neg_log_marginal_likelihood,
         center_kernel: bool = False,
     ) -> ModelState:
         "resets model state"
@@ -472,12 +494,13 @@ class SparseGaussianProcessRegression:
             y: labels
             return_negative: whether to return the negative of the lml
         """
-        return log_marginal_likelihood(
+        lml = log_marginal_likelihood(
             self.state,
             x=x,
             y=y,
-            return_negative=return_negative,
         )
+        if return_negative:
+            return -lml
 
     def fit(
         self,

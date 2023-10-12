@@ -477,9 +477,7 @@ class GaussianProcessRegression:
             y: labels
             return_negative: whether to return the negative of the lml
         """
-        lml = log_marginal_likelihood(
-            self.state, x=x, y=y
-        )
+        lml = log_marginal_likelihood(self.state, x=x, y=y)
         if return_negative:
             return -lml
 
