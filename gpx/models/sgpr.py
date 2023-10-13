@@ -74,6 +74,9 @@ def _log_marginal_likelihood(
     mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
     mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
 
+    # normalize by the number of samples
+    mll = mll / n
+
     return mll
 
 
