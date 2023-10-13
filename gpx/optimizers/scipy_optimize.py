@@ -73,7 +73,7 @@ def scipy_minimize(
         state = state.update(dict(params=params))
         return loss_fn(state, x, y)
 
-    grad_loss = jit(grad(loss))
+    grad_loss = jit(grad(loss), static_argnums=[1])
     optres = minimize(loss, x0=x0, args=(state), method="L-BFGS-B", jac=grad_loss)
 
     params = unravel_forward(optres.x)
