@@ -86,8 +86,10 @@ def linear_kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]) ->
 # =============================================================================
 
 
-def _polynomial_kernel_base(x1: ArrayLike, x2: ArrayLike, degree: int) -> Array:
-    return jnp.dot(x1, x2) ** degree
+def _polynomial_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, degree: float, offset: float
+) -> Array:
+    return (offset + jnp.dot(x1, x2)) ** degree
 
 
 @jit
@@ -95,11 +97,14 @@ def polynomial_kernel_base(
     x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
 ) -> Array:
     degree = params["degree"].value
-    return _polynomial_kernel_base(x1, x2, degree)
+    offset = params["offset"].value
+    return _polynomial_kernel_base(x1, x2, degree, offset)
 
 
-def _polynomial_kernel(x1: ArrayLike, x2: ArrayLike, degree: int) -> Array:
-    return (x1 @ x2.T) ** degree
+def _polynomial_kernel(
+    x1: ArrayLike, x2: ArrayLike, degree: float, offset: float
+) -> Array:
+    return (offset + x1 @ x2.T) ** degree
 
 
 @jit
@@ -107,7 +112,8 @@ def polynomial_kernel(
     x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
 ) -> Array:
     degree = params["degree"].value
-    return _polynomial_kernel(x1, x2, degree)
+    offset = params["offset"].value
+    return _polynomial_kernel(x1, x2, degree, offset)
 
 
 # =============================================================================
@@ -528,7 +534,14 @@ class Polynomial(Kernel):
                 forward_transform=identity,
                 backward_transform=identity,
                 prior=NormalPrior(loc=0.0, scale=1.0),
-            )
+            ),
+            offset=Parameter(
+                value=1.0,
+                trainable=False,
+                forward_transform=identity,
+                backward_transform=identity,
+                prior=NormalPrior(loc=0.0, scale=1.0),
+            ),
         )
 
 
