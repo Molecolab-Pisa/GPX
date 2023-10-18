@@ -445,6 +445,7 @@ class SparseGaussianProcessRegression:
             kernel_params=kernel_params,
             sigma=sigma,
             x_locs=x_locs,
+            loss_fn=loss_fn,
             center_kernel=center_kernel,
         )
 
