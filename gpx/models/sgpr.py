@@ -505,6 +505,7 @@ class SparseGaussianProcessRegression:
         )
         if return_negative:
             return -lml
+        return lml
 
     def fit(
         self,

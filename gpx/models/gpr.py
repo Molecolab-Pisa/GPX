@@ -483,6 +483,7 @@ class GaussianProcessRegression:
         lml = log_marginal_likelihood(self.state, x=x, y=y)
         if return_negative:
             return -lml
+        return lml
 
     def fit(
         self,
