@@ -66,7 +66,7 @@ def _log_marginal_likelihood(
 
     L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(m), lower=True)
     G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n)
+    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n) + 1e-10 * jnp.eye(n)
     L_n = jsp.linalg.cholesky(C_nn, lower=True)
     cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
 
