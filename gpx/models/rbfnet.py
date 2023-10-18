@@ -209,7 +209,7 @@ def init(
 # =============================================================================
 
 
-class RadialBasisFunctionNetwork:
+class RBFNet:
     "Radial Basis Function Network"
 
     _init_default = dict(output_layer=identity, loss_fn=train_loss, center_kernel=False)
@@ -271,7 +271,7 @@ class RadialBasisFunctionNetwork:
         )
 
     @classmethod
-    def from_state(cls, state: ModelState) -> "RadialBasisFunctionNetwork":
+    def from_state(cls, state: ModelState) -> "RBFNet":
         self = cls.__new__(cls)
         self.state = state
         return self
@@ -408,7 +408,3 @@ class RadialBasisFunctionNetwork:
             new_state = self.state.randomize(key)
 
         return self.from_state(new_state)
-
-
-# Alias
-RBFNet = RadialBasisFunctionNetwork

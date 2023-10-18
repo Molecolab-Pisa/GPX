@@ -406,7 +406,7 @@ def init(
 # =============================================================================
 
 
-class GaussianProcessRegression:
+class GPR:
     _init_default = dict(is_fitted=False, c=None, mu=None, k_mean=None)
 
     def __init__(
@@ -436,7 +436,7 @@ class GaussianProcessRegression:
         )
 
     @classmethod
-    def from_state(cls, state: ModelState) -> "GaussianProcessRegression":
+    def from_state(cls, state: ModelState) -> "GPR":
         self = cls.__new__(cls)
         self.state = state
         return self
@@ -615,7 +615,3 @@ class GaussianProcessRegression:
             new_state = self.state.randomize(key)
 
         return self.from_state(new_state)
-
-
-# Alias
-GPR = GaussianProcessRegression

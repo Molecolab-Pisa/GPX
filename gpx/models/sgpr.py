@@ -417,7 +417,7 @@ def init(
 # =============================================================================
 
 
-class SparseGaussianProcessRegression:
+class SGPR:
     _init_default = dict(is_fitted=False, c=None, y_mean=None, k_mean=None)
 
     def __init__(
@@ -450,7 +450,7 @@ class SparseGaussianProcessRegression:
         )
 
     @classmethod
-    def from_state(cls, state: ModelState) -> "SparseGaussianProcessRegression":
+    def from_state(cls, state: ModelState) -> "SGPR":
         self = cls.__new__(cls)
         self.state = state
         return self
@@ -633,7 +633,3 @@ class SparseGaussianProcessRegression:
             new_state = self.state.randomize(key)
 
         return self.from_state(new_state)
-
-
-# Alias
-SGPR = SparseGaussianProcessRegression

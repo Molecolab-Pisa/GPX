@@ -1,4 +1,4 @@
-from .gpr import GPR, GaussianProcessRegression
-from .rbfnet import RadialBasisFunctionNetwork, RBFNet
-from .sgpr import SGPR, SparseGaussianProcessRegression
-from .sgpr_rpchol import SGPR_RPChol, SparseGaussianProcesssRegressionRPCholesky
+from .gpr import GPR
+from .rbfnet import RBFNet
+from .sgpr import SGPR
+from .sgpr_rpchol import SGPR_RPChol
