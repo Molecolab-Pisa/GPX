@@ -3,13 +3,12 @@ from __future__ import annotations
 from typing import Callable, Tuple
 
 from jax import grad, jit
-from jax.flatten_util import ravel_pytree
-from jax.tree_util import tree_flatten, tree_unflatten
 from jax.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
 
 from ..parameters import ModelState
+from .utils import ravel_backward_trainables, unravel_forward_trainables
 
 # ============================================================================
 # Scipy Optimizer interface
@@ -41,40 +40,23 @@ def scipy_minimize(
         optres: optimization results, as output by the SciPy's optimizer
     """
 
-    fwd_fns = state.params_forward_transforms
-    bwd_fns = state.params_backward_transforms
+    # x0: flattened trainables (1D) in unbound space
+    # tdef: definition of trainables tree (non-trainables are None)
+    # unravel_fn: callable to unflatten x0
+    x0, tdef, unravel_fn = ravel_backward_trainables(state.params)
 
-    def forward(xt):
-        return [fwd(x) for fwd, x in zip(fwd_fns, xt)]
+    # function to unravel and unflatten trainables and go in bound space
+    unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
 
-    def backward(xt):
-        return [bwd(x) for bwd, x in zip(bwd_fns, xt)]
-
-    def ravel_backward(params):
-        x, tdef = tree_flatten(params)
-        x = backward(x)
-        x, unravel_fn = ravel_pytree(x)
-        return x, tdef, unravel_fn
-
-    x0, tdef, unravel_fn = ravel_backward(state.params)
-
-    def unravel_forward(x):
-        x = unravel_fn(x)
-        x = forward(x)
-        params = tree_unflatten(tdef, x)
-        return params
-
-    def loss(xt, state):
-        # important: here we first reconstruct the model state with the
-        # updated parameters before feeding it to the loss (lml).
-        # this ensures that gradients are stopped for parameters with
-        # trainable = False.
+    def loss(xt):
+        # go in bound space and reconstruct params
         params = unravel_forward(xt)
-        state = state.update(dict(params=params))
-        return loss_fn(state, x, y)
+        ustate = state.update(dict(params=params))
+        return loss_fn(ustate, x, y)
 
-    grad_loss = jit(grad(loss), static_argnums=[1])
-    optres = minimize(loss, x0=x0, args=(state), method="L-BFGS-B", jac=grad_loss)
+    grad_loss = jit(grad(loss))
+
+    optres = minimize(loss, x0=x0, method="L-BFGS-B", jac=grad_loss)
 
     params = unravel_forward(optres.x)
     state = state.update(dict(params=params))
