@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import warnings
-from typing import Callable, Tuple
+from typing import Any, Callable
 
 import numpy as np
-from jax import Array, grad, jit
+from jax import grad, jit
 from jax.typing import ArrayLike
 
 from ..parameters import ModelState
 from .utils import ravel_backward_trainables, unravel_forward_trainables
+
+Self = Any
 
 try:
     import nlopt
@@ -17,45 +19,6 @@ except ImportError:
         "NLopt is not installed. Interface to NLopt optimizers is not available.",
         stacklevel=2,
     )
-
-
-def _nlopt_bridge(
-    state: ModelState, x: ArrayLike, y: ArrayLike, loss_fn: Callable
-) -> Tuple[Array, Callable, Callable, Callable, Callable, Callable]:
-    """wraps the loss function to work with NLopt
-
-    Builds the bridge between NLopt and the GPX loss function.
-    Creates the functions to transform the trainable parameters into
-    unbound and bound space. Defines a loss function that takes into
-    account the constraints, and creates a wrapper loss that is compatible
-    with NLopt.
-    """
-
-    # x0: flattened trainables (1D) in unbound space
-    # tdef: definition of trainables tree (non-trainables are None)
-    # unravel_fn: callable to unflatten x0
-    x0, tdef, unravel_fn = ravel_backward_trainables(state.params)
-
-    # function to unravel and unflatten trainables and go in bound space
-    unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
-
-    def loss(xt):
-        # go in bound space and reconstruct params
-        params = unravel_forward(xt)
-        ustate = state.update(dict(params=params))
-        return loss_fn(ustate, x, y)
-
-    grad_loss = jit(grad(loss))
-
-    def nlopt_loss(x, grad):
-        if grad.size > 0:
-            # gradients from JAX
-            _grad = grad_loss(x)
-            # in-place update
-            grad[:] = np.array(_grad)
-        return np.array(loss(x)) * 1.0  # the 1.0 is a hack to a silent issue
-
-    return x0, ravel_backward_trainables, unravel_forward, loss, grad_loss, nlopt_loss
 
 
 class NLoptWrapper:
@@ -82,14 +45,13 @@ class NLoptWrapper:
 
     With this wrapper, you would do:
 
-    >>> optim = NLoptWrapper(state, x=x, y=y, loss_fn=loss_fn, opt=nlopt.LD_MMA)
+    >>> optim = NLoptWrapper(state, opt=nlopt.LD_MMA)
     >>> # you access the NLopt optimizer as `optim.opt`
     >>> optim.opt.set_lower_bounds([-float('inf'), 0])
-    >>> optim.opt.set_min_objective(myfunc)
     >>> # [...]
     >>> optim.opt.set_xtol_rel(1e-4)
-    >>> # don't need to pass the starting value as it is stored internally
-    >>> optim.optimize()
+    >>> # the set_min_objective is set internally
+    >>> optim_state = optim.optimize(state, x, y, loss_fn)
     >>> minf = optim.opt.last_optimum_value()
 
     Note: if you train with bounds/nonlinear transforms, you may want
@@ -99,57 +61,77 @@ class NLoptWrapper:
 
     Attributes:
         opt: NLopt optimizer
-        x0: initial value of trainable parameters
-        loss_fn: original loss function
-        loss: loss function for unbound 1D parameters
-        grad_loss: gradients of loss function for unbound 1D parameters
-        nlopt_loss: loss function compatible with NLopt
+        orig_x0: initial value of trainable parameters
+        orig_state: ModelState used to instantiate the optimizer
         ravel_backward: function to flatten and apply backward transformation to params
         unravel_forward: function to unflatten and apply forward to 1D trainable params
     """
 
-    def __init__(
-        self, state: ModelState, x: ArrayLike, y: ArrayLike, loss_fn: Callable, opt: int
-    ) -> None:
+    def __init__(self, state: ModelState, opt: int) -> None:
         """
         Args:
             state: model state
-            x: input data
-            y: target data
-            loss_fn: loss function
             opt: NLopt optimizer (e.g., nlopt.LD_MMA)
         """
-        # store the state because it's needed later to
-        # reconstruct the parameters
-        self._state = state
-        self.loss_fn = loss_fn
+        self.orig_state = state
 
-        # make the `nlopt_loss` function that exposes the JAX loss
-        # to NLopt
-        bridge = _nlopt_bridge(state=state, x=x, y=y, loss_fn=loss_fn)
-        x0, ravel_backward, unravel_forward, loss, grad_loss, nlopt_loss = bridge
-
-        # store the starting point, the functions to unbound/bound
-        # the parameters, and the various losses in unbound space
-        self.x0 = x0
-        self.ravel_backward = ravel_backward
+        # functions to unbound/bound parameters
+        x0, tdef, unravel_fn = ravel_backward_trainables(state.params)
+        unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
+        # unbound parameters, flattened to 1D
+        self.orig_x0 = x0
+        # function to unbound and flatten
+        self.ravel_backward = ravel_backward_trainables
+        # function to bound + reconstruct
         self.unravel_forward = unravel_forward
-        self.loss = loss
-        self.grad_loss = grad_loss
-        self.nlopt_loss = nlopt_loss
 
-        # setup the NLopt optimizer
+        # NLopt optimizer
         self.opt = nlopt.opt(opt, len(x0))
-        self.opt.set_min_objective(nlopt_loss)
 
-    def optimize(self) -> ModelState:
+    def optimize(
+        self, state: ModelState, x: ArrayLike, y: ArrayLike, loss_fn: Callable
+    ) -> ModelState:
         """optimize parameters
 
-        Optimize the parameters using `self.x0` as starting
-        point, and return the model state with the optimized
-        values.
+        Args:
+            state: ModelState, starting value of parameters are taken from here.
+                   Important: Must be the same (except for parameter values) as
+                              the state used to initialize the wrapper.
+            x: input data
+            y: target data
+            loss_fn: loss function, signature fn(state, x, y)
+        Returns:
+            optim_state: optimized state
+            optim_result: NLopt optimization return code
         """
-        xt = self.opt.optimize(self.x0)
+        # set the starting point from state
+        x0, _, _ = self.ravel_backward(state.params)
+
+        # setup the loss function
+        def loss(xt):
+            # go in bound space and reconstruct params
+            params = self.unravel_forward(xt)
+            ustate = state.update(dict(params=params))
+            return loss_fn(ustate, x, y)
+
+        grad_loss = jit(grad(loss))
+
+        # wrap the loss so it's compatible with NLopt
+        def nlopt_loss(xt, grad):
+            if grad.size > 0:
+                # gradients from JAX
+                _grad = grad_loss(xt)
+                # in-place update
+                grad[:] = np.array(_grad)
+            return np.array(loss(xt)) * 1.0  # the 1.0 is a hack to a silent issue
+
+        # set loss to minimize
+        self.opt.set_min_objective(nlopt_loss)
+
+        # minimize
+        xt = self.opt.optimize(x0)
+
+        # reconstruct parameters and state
         params = self.unravel_forward(xt)
-        state = self._state.update(dict(params=params))
-        return state
+        state = state.update(dict(params=params))
+        return state, self.opt.last_optimize_result()

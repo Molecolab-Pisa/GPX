@@ -13,7 +13,7 @@ from typing_extensions import Self
 
 from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..mean_functions import data_mean
-from ..optimizers import scipy_minimize
+from ..optimizers import NLoptWrapper, scipy_minimize
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter, is_parameter
 from ..priors import NormalPrior
@@ -522,6 +522,41 @@ class GPR:
         """
         if minimize_lml:
             minimization_function = scipy_minimize
+            self.state, optres, *history = randomized_minimization(
+                key=key,
+                state=self.state,
+                x=x,
+                y=y,
+                minimization_function=minimization_function,
+                num_restarts=num_restarts,
+                return_history=return_history,
+            )
+            self.optimize_results_ = optres
+
+        self.state = fit(self.state, x=x, y=y)
+
+        self.c_ = self.state.c
+        self.mu_ = self.state.mu
+        self.x_train = x
+        self.y_train = y
+        if return_history:
+            self.states_history_ = history[0]
+            self.losses_history_ = history[1]
+
+        return self
+
+    def fit_nlopt(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        opt: NLoptWrapper,
+        minimize=True,
+        key=None,
+        num_restarts=0,
+        return_history=False,
+    ) -> Self:
+        if minimize:
+            minimization_function = opt.optimize
             self.state, optres, *history = randomized_minimization(
                 key=key,
                 state=self.state,
