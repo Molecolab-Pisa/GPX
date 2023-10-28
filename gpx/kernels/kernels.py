@@ -536,6 +536,12 @@ class Kernel:
     def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
         return self.k(x1, x2, params)
 
+    def __add__(self, k: "Kernel") -> "Sum":
+        return Sum(self, k)
+
+    def __mul__(self, k: "Kernel") -> "Prod":
+        return Prod(self, k)
+
 
 class Constant(Kernel):
     def __init__(self, active_dims: ArrayLike = None) -> None:
