@@ -378,6 +378,54 @@ def identity_filter(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
     return kernel
 
 
+def identity_filter_jac(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
+    """filters every dimension in the input
+
+    Given a kernel function operating on two samples x1 and x2, this function
+    yields another kernel function operating on filtered x1 and x2, jacobian1
+    and jacobian2. This filter has no effects. The `active_dims` argument is not used.
+
+    Args:
+        kernel_func: kernel function
+        active_dims: active dimensions (columns) to retain in the input
+    Returns:
+        kernel: kernel function operating on filtered inputs
+    """
+
+    def kernel(
+        x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], jacobian: ArrayLike
+    ):
+        return kernel_func(x1, x2, params, jacobian)
+
+    return kernel
+
+
+def identity_filter_jac2(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
+    """filters every dimension in the input
+
+    Given a kernel function operating on two samples x1 and x2, this function
+    yields another kernel function operating on filtered x1 and x2, jacobian1
+    and jacobian2. This filter has no effects. The `active_dims` argument is not used.
+
+    Args:
+        kernel_func: kernel function
+        active_dims: active dimensions (columns) to retain in the input
+    Returns:
+        kernel: kernel function operating on filtered inputs
+    """
+
+    def kernel(
+        x1: ArrayLike,
+        x2: ArrayLike,
+        params: Dict[str, Parameter],
+        jacobian1: ArrayLike,
+        jacobian2: ArrayLike,
+    ):
+        return kernel_func(x1, x2, params, jacobian1, jacobian2)
+
+    return kernel
+
+
 # =============================================================================
 # Classes
 # =============================================================================
@@ -477,8 +525,8 @@ class Kernel:
         if value is None:
             self._active_dims = value
             self.filter_input = identity_filter
-            self.filter_input_jac = identity_filter
-            self.filter_input_jac2 = identity_filter
+            self.filter_input_jac = identity_filter_jac
+            self.filter_input_jac2 = identity_filter_jac2
         else:
             self._active_dims = value
             self.filter_input = active_dims_filter
