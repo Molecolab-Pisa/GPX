@@ -213,8 +213,8 @@ class ModelState:
 
         fields = []
         for k, p in tree_leaves_with_path(kernel_params, is_leaf=is_parameter):
-            # name = "kernel " + ':'.join([sk.key for sk in k])
-            name = "kernel " + k[-1].key
+            name = "kernel " + ":".join([sk.key for sk in k])
+            # name = "kernel " + k[-1].key
             fields.append([name] + list(get_info(p)))
 
         fields += [[k] + list(get_info(p)) for k, p in params.items()]
