@@ -551,7 +551,7 @@ class SGPR_RPChol:
         self,
         x: ArrayLike,
         y: ArrayLike,
-        minimize_lml: Optional[bool] = True,
+        minimize: Optional[bool] = True,
         num_restarts: Optional[int] = 0,
         key: prng.PRNGKeyArray = None,
         return_history: Optional[bool] = False,
@@ -565,8 +565,7 @@ class SGPR_RPChol:
         Args:
             x: observations
             y: labels
-            minimize_lml: whether to tune the parameters to optimize the
-                          log marginal likelihood
+            minimize: whether to tune the parameters to optimize the loss.
             num_restarts: number of restarts with randomization to do.
                           If 0, the model is fitted once without any randomization.
 
@@ -582,7 +581,7 @@ class SGPR_RPChol:
             In order to optimize with randomized restarts you need to provide a valid
             JAX PRNGKey.
         """
-        if minimize_lml:
+        if minimize:
             minimization_function = scipy_minimize
             self.state, optres, *history = randomized_minimization(
                 key=key,
