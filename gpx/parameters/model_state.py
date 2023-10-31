@@ -189,11 +189,14 @@ class ModelState:
             "forward",
             "backward",
             "prior",
-            "type",
+            # "type",
             "dtype",
             "shape",
             "value",
         ]
+
+        # colored headers
+        headers = ["\033[1;35m" + h + "\033[0m" for h in headers]
 
         def string_repr(p):
             return np.array2string(p.value, edgeitems=1, threshold=1)
@@ -205,7 +208,7 @@ class ModelState:
                 p.forward_transform.__name__,
                 p.backward_transform.__name__,
                 str(p.prior),
-                type(v).__name__,
+                # type(v).__name__,
                 v.dtype,
                 v.shape,
                 string_repr(p),
