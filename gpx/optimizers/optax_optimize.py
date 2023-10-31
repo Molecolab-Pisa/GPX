@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from functools import partial, wraps
 from typing import Any, Callable, Dict, List, Tuple
 
 import jax
-import optax
 from jax import Array
 from jax.typing import ArrayLike
 from tqdm import tqdm
 
 from ..parameters import ModelState
+
+try:
+    import optax
+except ImportError:
+    warnings.warn(
+        "optax is not installed. Interface to optax optimizers is not available.",
+        stacklevel=2,
+    )
 
 # state of the optax optimizer
 OptimizerState = Any

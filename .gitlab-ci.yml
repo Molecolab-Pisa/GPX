@@ -38,7 +38,7 @@ install_gpx:
     image: $IMAGE_TAG:latest
     script:
         - source /usr/src/app/venv/bin/activate
-        - pip3 install numpy tabulate typing_extensions "jax[cpu]" optax tqdm
+        - pip3 install numpy tabulate typing_extensions "jax[cpu]" tqdm
         - pip3 install .
 
 
