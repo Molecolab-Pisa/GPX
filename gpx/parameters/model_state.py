@@ -98,7 +98,7 @@ class ModelState:
     def _params_forward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.forward_transform for p in tree_leaves(params, is_leaf=is_parameter)]
+        return [p.bijector.forward for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_forward_transforms(self) -> List[Callable]:
@@ -107,7 +107,7 @@ class ModelState:
     def _params_backward_transforms(
         self, params: Dict[str, Parameter]
     ) -> List[Callable]:
-        return [p.backward_transform for p in tree_leaves(params, is_leaf=is_parameter)]
+        return [p.bijector.backward for p in tree_leaves(params, is_leaf=is_parameter)]
 
     @property
     def params_backward_transforms(self) -> List[Callable]:
@@ -186,8 +186,7 @@ class ModelState:
         headers = [
             "name",
             "trainable",
-            "forward",
-            "backward",
+            "bijector",
             "prior",
             # "type",
             "dtype",
@@ -205,8 +204,7 @@ class ModelState:
             v = p.value
             return (
                 p.trainable,
-                p.forward_transform.__name__,
-                p.backward_transform.__name__,
+                str(p.bijector),
                 str(p.prior),
                 # type(v).__name__,
                 v.dtype,

@@ -2,12 +2,12 @@ import jax.numpy as jnp
 import pytest
 from jax import random
 
+from gpx.bijectors import Identity, Softplus
 from gpx.kernels import SquaredExponential
 from gpx.mean_functions import data_mean, zero_mean
 from gpx.models import GPR, SGPR, RBFNet
 from gpx.parameters import ModelState, Parameter
 from gpx.priors import NormalPrior
-from gpx.utils import identity, inverse_softplus, softplus
 
 
 def create_gpr_model():
@@ -17,12 +17,8 @@ def create_gpr_model():
 
     model = GPR(
         kernel=SquaredExponential(),
-        kernel_params={
-            "lengthscale": Parameter(
-                1.0, True, softplus, inverse_softplus, NormalPrior()
-            )
-        },
-        sigma=Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
+        kernel_params={"lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())},
+        sigma=Parameter(0.1, False, Softplus(), NormalPrior()),
     )
     return model_minimal, model
 
@@ -32,22 +28,14 @@ def create_sgpr_model():
 
     model_minimal = SGPR(
         kernel=SquaredExponential(),
-        x_locs=Parameter(
-            X_locs, False, identity, identity, NormalPrior(shape=X_locs.shape)
-        ),
+        x_locs=Parameter(X_locs, False, Identity(), NormalPrior(shape=X_locs.shape)),
     )
 
     model = SGPR(
         kernel=SquaredExponential(),
-        x_locs=Parameter(
-            X_locs, False, identity, identity, NormalPrior(shape=X_locs.shape)
-        ),
-        kernel_params={
-            "lengthscale": Parameter(
-                1.0, True, softplus, inverse_softplus, NormalPrior()
-            )
-        },
-        sigma=Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
+        x_locs=Parameter(X_locs, False, Identity(), NormalPrior(shape=X_locs.shape)),
+        kernel_params={"lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())},
+        sigma=Parameter(0.1, False, Softplus(), NormalPrior()),
     )
     return model_minimal, model
 
@@ -68,7 +56,7 @@ def create_rbfnet_model():
         key=random.PRNGKey(2023),
         kernel=SquaredExponential(),
         inducing_points=Parameter(
-            I_points, False, identity, identity, NormalPrior(shape=I_points.shape)
+            I_points, False, Identity(), NormalPrior(shape=I_points.shape)
         ),
         num_output=3,
     )
@@ -77,15 +65,11 @@ def create_rbfnet_model():
         key=random.PRNGKey(2023),
         kernel=SquaredExponential(),
         inducing_points=Parameter(
-            I_points, False, identity, identity, NormalPrior(shape=I_points.shape)
+            I_points, False, Identity(), NormalPrior(shape=I_points.shape)
         ),
         num_output=3,
-        kernel_params={
-            "lengthscale": Parameter(
-                1.0, True, softplus, inverse_softplus, NormalPrior()
-            )
-        },
-        alpha=Parameter(1.0, True, softplus, inverse_softplus, NormalPrior()),
+        kernel_params={"lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())},
+        alpha=Parameter(1.0, True, Softplus(), NormalPrior()),
         output_layer=diabatization_layer,
     )
     return model_minimal, model
@@ -102,11 +86,9 @@ def create_model_state():
         mean_function=data_mean,
         params={
             "kernel_params": {
-                "lengthscale": Parameter(
-                    1.0, True, softplus, inverse_softplus, NormalPrior()
-                )
+                "lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())
             },
-            "sigma": Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
+            "sigma": Parameter(0.1, False, Softplus(), NormalPrior()),
         },
     )
 
@@ -116,15 +98,11 @@ def create_model_state():
         mean_function=zero_mean,
         params={
             "kernel_params": {
-                "lengthscale": Parameter(
-                    1.0, True, softplus, inverse_softplus, NormalPrior()
-                )
+                "lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())
             },
-            "sigma": Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
+            "sigma": Parameter(0.1, False, Softplus(), NormalPrior()),
         },
-        x_locs=Parameter(
-            X_locs, False, identity, identity, NormalPrior(shape=X_locs.shape)
-        ),
+        x_locs=Parameter(X_locs, False, Identity(), NormalPrior(shape=X_locs.shape)),
     )
 
     I_points = random.normal(random.PRNGKey(2023), shape=(10, 1))
@@ -132,20 +110,17 @@ def create_model_state():
         kernel=SquaredExponential(),
         mean_function=data_mean,
         params={
-            "alpha": Parameter(1.0, True, softplus, inverse_softplus, NormalPrior()),
+            "alpha": Parameter(1.0, True, Softplus(), NormalPrior()),
             "inducing_points": Parameter(
-                I_points, False, identity, identity, NormalPrior(shape=I_points.shape)
+                I_points, False, Identity(), NormalPrior(shape=I_points.shape)
             ),
             "kernel_params": {
-                "lengthscale": Parameter(
-                    1.0, True, softplus, inverse_softplus, NormalPrior()
-                )
+                "lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())
             },
             "weights": Parameter(
                 random.normal(random.PRNGKey(2023), shape=(1, 3)),
                 True,
-                identity,
-                identity,
+                Identity(),
                 NormalPrior(shape=(1, 3)),
             ),
         },

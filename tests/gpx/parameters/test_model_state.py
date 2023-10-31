@@ -4,11 +4,11 @@ import pytest
 from jax import random
 from numpy.testing import assert_equal
 
+from gpx.bijectors import Softplus
 from gpx.kernels import SquaredExponential
 from gpx.mean_functions import data_mean
 from gpx.parameters import ModelState, Parameter
 from gpx.priors import NormalPrior
-from gpx.utils import inverse_softplus, softplus
 
 
 def create_model_state():
@@ -17,11 +17,9 @@ def create_model_state():
         mean_function=data_mean,
         params={
             "kernel_params": {
-                "lengthscale": Parameter(
-                    1.0, True, softplus, inverse_softplus, NormalPrior()
-                )
+                "lengthscale": Parameter(1.0, True, Softplus(), NormalPrior())
             },
-            "sigma": Parameter(0.1, False, softplus, inverse_softplus, NormalPrior()),
+            "sigma": Parameter(0.1, False, Softplus(), NormalPrior()),
         },
     )
     return state
@@ -77,8 +75,7 @@ def test_save_and_reload_state(tmp_path, aux):
 
         # Check that all the other attributes of Parameter are the same
         # Python objects
-        assert param.forward_transform is new_param.forward_transform
-        assert param.backward_transform is new_param.backward_transform
+        assert param.bijector is new_param.bijector
         assert param.trainable is new_param.trainable
 
     # Check auxiliary data
@@ -108,7 +105,7 @@ def test_shallow_copy():
 
     # if the kernel is reassigned to another object,
     # the change takes place only in one state
-    state.kernel = softplus
+    state.kernel = Softplus()
     with pytest.raises(AssertionError):
         assert state.kernel is state_copied.kernel
 
@@ -139,8 +136,7 @@ def test_randomize_model_state():
         assert isinstance(new_param, Parameter)
 
         # check that all the other attributes of Parameter are the same python objects
-        assert param.forward_transform is new_param.forward_transform
-        assert param.backward_transform is new_param.backward_transform
+        assert param.bijector is new_param.bijector
         assert param.trainable is new_param.trainable
 
     # lenghtscale is trainable:

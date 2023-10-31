@@ -13,7 +13,7 @@ PyTreeDef = Any
 
 
 def _get_trainable_fwd_or_truncate(p: Parameter) -> Optional[Callable]:
-    return p.forward_transform if p.trainable else None
+    return p.bijector.forward if p.trainable else None
 
 
 def get_trainable_forward_transforms(params: Dict[str, Parameter]) -> List[Callable]:
@@ -29,7 +29,7 @@ def get_trainable_forward_transforms(params: Dict[str, Parameter]) -> List[Calla
 
 
 def _get_trainable_bwd_or_truncate(p: Parameter) -> Optional[Callable]:
-    return p.backward_transform if p.trainable else None
+    return p.bijector.backward if p.trainable else None
 
 
 def get_trainable_backward_transforms(params: Dict[str, Parameter]) -> List[Callable]:

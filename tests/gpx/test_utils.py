@@ -3,7 +3,8 @@ import pytest
 from jax import grad
 from numpy.testing import assert_equal
 
-from gpx.utils import euclidean_distance, identity, inverse_softplus, softplus
+from gpx.bijectors import Identity, Softplus
+from gpx.utils import euclidean_distance
 
 # ============================================================================
 # Metrics
@@ -49,7 +50,7 @@ def test_softplus(value):
     Checks that the output of softplus gives a positive number
     """
     x = jnp.array([value])
-    y = softplus(x)
+    y = Softplus().forward(x)
     assert y >= 0
 
 
@@ -62,7 +63,8 @@ def test_inverse_softplus(value):
     a perfect recovery of the input.
     """
     x = jnp.array([value])
-    y = inverse_softplus(softplus(x))
+    bij = Softplus()
+    y = bij.backward(bij.forward(x))
     assert_equal(x, y)
 
 
@@ -73,7 +75,7 @@ def test_inverse_softplus_negative(value):
     numbers, and gives NaN as a result
     """
     x = jnp.array([value])
-    y = inverse_softplus(x)
+    y = Softplus().backward(x)
     assert jnp.isnan(y)
 
 
@@ -84,7 +86,8 @@ def test_softplus_plus_inversion_stability(value):
     finite number (not NaN)
     """
     x = jnp.array([value])
-    y = inverse_softplus(softplus(x))
+    bij = Softplus()
+    y = bij.backward(bij.forward(x))
     assert jnp.isfinite(y)
 
 
@@ -93,5 +96,5 @@ def test_identity():
     Checks that the output of identity has the same value as the input
     """
     x = jnp.array([1])
-    y = identity(x)
+    y = Identity().forward(x)
     assert_equal(x, y)

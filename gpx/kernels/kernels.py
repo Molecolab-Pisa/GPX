@@ -4,15 +4,10 @@ import jax.numpy as jnp
 from jax import Array, jit
 from jax.typing import ArrayLike
 
+from ..bijectors import Identity, Softplus
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
-from ..utils import (
-    euclidean_distance,
-    identity,
-    inverse_softplus,
-    softplus,
-    squared_distances,
-)
+from ..utils import euclidean_distance, squared_distances
 from .kernelizers import grad_kernelize, kernelize
 from .operations import (
     prod_kernels,
@@ -555,8 +550,7 @@ class Constant(Kernel):
             variance=Parameter(
                 value=1.0,
                 trainable=True,
-                forward_transform=softplus,
-                backward_transform=inverse_softplus,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )
@@ -585,15 +579,13 @@ class Polynomial(Kernel):
             degree=Parameter(
                 value=2.0,
                 trainable=False,
-                forward_transform=identity,
-                backward_transform=identity,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             ),
             offset=Parameter(
                 value=1.0,
                 trainable=False,
-                forward_transform=identity,
-                backward_transform=identity,
+                bijector=Identity(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             ),
         )
@@ -611,8 +603,7 @@ class SquaredExponential(Kernel):
             lengthscale=Parameter(
                 value=1.0,
                 trainable=True,
-                forward_transform=softplus,
-                backward_transform=inverse_softplus,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )
@@ -630,8 +621,7 @@ class Matern12(Kernel):
             lengthscale=Parameter(
                 value=1.0,
                 trainable=True,
-                forward_transform=softplus,
-                backward_transform=inverse_softplus,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )
@@ -649,8 +639,7 @@ class Matern32(Kernel):
             lengthscale=Parameter(
                 value=1.0,
                 trainable=True,
-                forward_transform=softplus,
-                backward_transform=inverse_softplus,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )
@@ -668,8 +657,7 @@ class Matern52(Kernel):
             lengthscale=Parameter(
                 value=1.0,
                 trainable=True,
-                forward_transform=softplus,
-                backward_transform=inverse_softplus,
+                bijector=Softplus(),
                 prior=NormalPrior(loc=0.0, scale=1.0),
             )
         )

@@ -9,12 +9,12 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
+from ..bijectors import Identity, Softplus
 from ..kernels.operations import kernel_center
 from ..optimizers import NLoptWrapper, optax_minimize, scipy_minimize
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter
 from ..priors import NormalPrior
-from ..utils import identity, inverse_softplus, softplus
 from .utils import (
     _check_object_is_callable,
     _check_object_is_type,
@@ -24,6 +24,10 @@ from .utils import (
 
 # optax optimizer
 GradientTransformation = Any
+
+
+def identity(x: Any) -> Any:
+    return x
 
 
 @partial(jit, static_argnums=[3, 4, 5, 6])
@@ -135,8 +139,7 @@ def default_params(
     alpha = Parameter(
         value=1.0,
         trainable=True,
-        forward_transform=softplus,
-        backward_transform=inverse_softplus,
+        bijector=Softplus(),
         prior=NormalPrior(loc=0.0, scale=1.0),
     )
 
@@ -144,8 +147,7 @@ def default_params(
     weights = Parameter(
         value=random.normal(key, shape=(num_input, num_output)),
         trainable=True,
-        forward_transform=identity,
-        backward_transform=identity,
+        bijector=Identity(),
         prior=NormalPrior(loc=0.0, scale=1.0, shape=(num_input, num_output)),
     )
 

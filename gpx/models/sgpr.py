@@ -12,13 +12,13 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
+from ..bijectors import Softplus
 from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..mean_functions import data_mean
 from ..optimizers import NLoptWrapper, scipy_minimize
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, is_parameter
 from ..priors import NormalPrior
-from ..utils import inverse_softplus, softplus
 from .utils import (
     _check_object_is_callable,
     _check_object_is_type,
@@ -357,8 +357,7 @@ def default_params() -> Dict[str, Parameter]:
     sigma = Parameter(
         value=1.0,
         trainable=True,
-        forward_transform=softplus,
-        backward_transform=inverse_softplus,
+        bijector=Softplus(),
         prior=NormalPrior(loc=0.0, scale=1.0),
     )
 
