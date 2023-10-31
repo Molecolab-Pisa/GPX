@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from functools import partial
 from typing import Callable, Dict, Optional, Tuple
 
@@ -554,6 +555,15 @@ class SGPR:
             )
             self.optimize_results_ = optres
 
+            # if the optimization is failed, print a warning
+            if not optres.success:
+                warnings.warn(
+                    "optimization returned with error: {:d}. ({:s})".format(
+                        optres.status, optres.message
+                    ),
+                    stacklevel=2,
+                )
+
         self.state = fit(self.state, x=x, y=y)
 
         self.c_ = self.state.c
@@ -589,6 +599,12 @@ class SGPR:
                 return_history=return_history,
             )
             self.optimize_results_ = optres
+
+            if optres < 0:
+                warnings.warn(
+                    "optimization returned with error: {:d}".format(optres),
+                    stacklevel=2,
+                )
 
         self.state = fit(self.state, x=x, y=y)
 
