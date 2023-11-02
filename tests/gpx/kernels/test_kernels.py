@@ -8,9 +8,9 @@ from scipy.special import gamma, kv
 from gpx.bijectors import Softplus
 from gpx.kernels.kernels import (
     linear_kernel,
-    m12_kernel,
-    m32_kernel,
-    m52_kernel,
+    matern12_kernel,
+    matern32_kernel,
+    matern52_kernel,
     squared_exponential_kernel,
 )
 from gpx.parameters import Parameter
@@ -104,7 +104,7 @@ def test_matern12_kernel(dim, lengthscale):
     X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": Parameter(lengthscale, True, Softplus(), NormalPrior())}
 
-    K = m12_kernel(X1, X2, params)
+    K = matern12_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 1.0 / 2, params)
 
     assert_allclose(K, K_ref)
@@ -119,7 +119,7 @@ def test_matern32_kernel(dim, lengthscale):
     X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": Parameter(lengthscale, True, Softplus(), NormalPrior())}
 
-    K = m32_kernel(X1, X2, params)
+    K = matern32_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 3.0 / 2, params)
 
     assert_allclose(K, K_ref)
@@ -134,7 +134,7 @@ def test_matern52_kernel(dim, lengthscale):
     X2 = random.normal(subkey, shape=(20, dim))
     params = {"lengthscale": Parameter(lengthscale, True, Softplus(), NormalPrior())}
 
-    K = m52_kernel(X1, X2, params)
+    K = matern52_kernel(X1, X2, params)
     K_ref = reference_matern_kernel(X1, X2, 5.0 / 2, params)
 
     assert_allclose(K, K_ref)

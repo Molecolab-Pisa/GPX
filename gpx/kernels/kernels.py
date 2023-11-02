@@ -6,7 +6,7 @@ from jax.typing import ArrayLike
 
 from ..bijectors import Identity, Softplus
 from ..parameters.parameter import Parameter
-from ..priors import NormalPrior
+from ..priors import GammaPrior, NormalPrior
 from ..utils import euclidean_distance, squared_distances
 from .kernelizers import grad_kernelize, kernelize
 from .operations import (
@@ -25,7 +25,7 @@ from .operations import (
 # =============================================================================
 
 
-def _constant_kernel_base(x1: ArrayLike, x2: ArrayLike, variance: float) -> Array:
+def _constant_kernel_base(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> Array:
     return variance
 
 
@@ -37,7 +37,7 @@ def constant_kernel_base(
     return _constant_kernel_base(x1, x2, variance)
 
 
-def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: float) -> Array:
+def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> Array:
     ns1, _ = x1.shape
     ns2, _ = x2.shape
     return jnp.ones((ns1, ns2), dtype=jnp.float64) * variance
@@ -82,7 +82,7 @@ def linear_kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]) ->
 
 
 def _polynomial_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, degree: float, offset: float
+    x1: ArrayLike, x2: ArrayLike, degree: ArrayLike, offset: ArrayLike
 ) -> Array:
     return (offset + jnp.dot(x1, x2)) ** degree
 
@@ -97,7 +97,7 @@ def polynomial_kernel_base(
 
 
 def _polynomial_kernel(
-    x1: ArrayLike, x2: ArrayLike, degree: float, offset: float
+    x1: ArrayLike, x2: ArrayLike, degree: ArrayLike, offset: ArrayLike
 ) -> Array:
     return (offset + x1 @ x2.T) ** degree
 
@@ -117,7 +117,7 @@ def polynomial_kernel(
 
 
 def _squared_exponential_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, lengthscale: float
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
 ) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
@@ -133,7 +133,7 @@ def squared_exponential_kernel_base(
 
 
 def _squared_exponential_kernel(
-    x1: ArrayLike, x2: ArrayLike, lengthscale: float
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
 ) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
@@ -154,7 +154,9 @@ def squared_exponential_kernel(
 # =============================================================================
 
 
-def _matern12_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern12_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = euclidean_distance(z1, z2)
@@ -169,7 +171,7 @@ def matern12_kernel_base(
     return _matern12_kernel_base(x1, x2, lengthscale)
 
 
-def _matern12_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern12_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
@@ -190,7 +192,9 @@ def matern12_kernel(
 # =============================================================================
 
 
-def _matern32_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern32_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(3.0) * euclidean_distance(z1, z2)
@@ -205,7 +209,7 @@ def matern32_kernel_base(
     return _matern32_kernel_base(x1, x2, lengthscale)
 
 
-def _matern32_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern32_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
@@ -226,7 +230,9 @@ def matern32_kernel(
 # =============================================================================
 
 
-def _matern52_kernel_base(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern52_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d = jnp.sqrt(5.0) * euclidean_distance(z1, z2)
@@ -241,7 +247,7 @@ def matern52_kernel_base(
     return _matern52_kernel_base(x1, x2, lengthscale)
 
 
-def _matern52_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: float) -> Array:
+def _matern52_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
     d2 = squared_distances(z1, z2)
@@ -258,16 +264,26 @@ def matern52_kernel(
 
 
 # =============================================================================
-# Kernel aliases
+# Periodic kernels
 # =============================================================================
 
-const_kernel = constant_kernel
-lin_kernel = linear_kernel
-poly_kernel = polynomial_kernel
-se_kernel = squared_exponential_kernel
-m12_kernel = matern12_kernel
-m32_kernel = matern32_kernel
-m52_kernel = matern52_kernel
+
+def _expsinsquared_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, period: ArrayLike
+) -> Array:
+    return jnp.exp(
+        -4 * jnp.sum(jnp.sin(jnp.pi * jnp.abs(x1 - x2) / period) ** 2 / lengthscale)
+    )
+
+
+@jit
+def expsinsquared_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    period = params["periodicity"].value
+    return _expsinsquared_kernel_base(x1, x2, lengthscale, period)
+
 
 # =============================================================================
 # Filter Active Dimensions
@@ -539,6 +555,15 @@ class Kernel:
 
 
 class Constant(Kernel):
+    """Constant kernel
+
+    The Constant kernel:
+
+        k(x, x') = v
+
+    where v is the variance.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = constant_kernel_base
         super().__init__(active_dims)
@@ -551,12 +576,20 @@ class Constant(Kernel):
                 value=1.0,
                 trainable=True,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             )
         )
 
 
 class Linear(Kernel):
+    """Linear kernel
+
+    The Linear kernel:
+
+        k(x, x') = x∙x'
+
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = linear_kernel_base
         super().__init__(active_dims)
@@ -568,6 +601,15 @@ class Linear(Kernel):
 
 
 class Polynomial(Kernel):
+    """Polynomial kernel
+
+    The Polynomial kernel:
+
+        k(x, x') = (c + x∙x')^(d)
+
+    where c is the offset and d is the degree.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = polynomial_kernel_base
         super().__init__(active_dims)
@@ -580,7 +622,7 @@ class Polynomial(Kernel):
                 value=2.0,
                 trainable=False,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             ),
             offset=Parameter(
                 value=1.0,
@@ -592,6 +634,15 @@ class Polynomial(Kernel):
 
 
 class SquaredExponential(Kernel):
+    """SquaredExponential kernel
+
+    The Squared Exponential kernel:
+
+        k(x, x') = exp( -∥ x - x'∥² / l)
+
+    where l is the lengthscale.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = squared_exponential_kernel_base
         super().__init__(active_dims)
@@ -604,12 +655,22 @@ class SquaredExponential(Kernel):
                 value=1.0,
                 trainable=True,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             )
         )
 
 
 class Matern12(Kernel):
+    """Matern12 kernel
+
+    The Matern(ν=1/2) kernel:
+
+        k(x, x') = exp(-z)
+
+    where z = (d / l), l is the lengthscale, and d is the
+    Euclidean distance ∥ x - x'∥.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = matern12_kernel_base
         super().__init__(active_dims)
@@ -622,12 +683,22 @@ class Matern12(Kernel):
                 value=1.0,
                 trainable=True,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             )
         )
 
 
 class Matern32(Kernel):
+    """Matern32 kernel
+
+    The Matern(ν=3/2) kernel:
+
+        k(x, x') = (1 + √3 z) exp(-√3 z)
+
+    where z = (d / l), l is the lengthscale, and d is the
+    Euclidean distance ∥ x - x'∥.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = matern32_kernel_base
         super().__init__(active_dims)
@@ -640,12 +711,22 @@ class Matern32(Kernel):
                 value=1.0,
                 trainable=True,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             )
         )
 
 
 class Matern52(Kernel):
+    """Matern52 kernel
+
+    The Matern(ν=5/2) kernel:
+
+        k(x, x') = (1 + √5 z + (5/3)z²) exp(-√5 z)
+
+    where z = (d / l), l is the lengthscale, and d is the
+    Euclidean distance ∥ x - x'∥.
+    """
+
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = matern52_kernel_base
         super().__init__(active_dims)
@@ -658,8 +739,45 @@ class Matern52(Kernel):
                 value=1.0,
                 trainable=True,
                 bijector=Softplus(),
-                prior=NormalPrior(loc=0.0, scale=1.0),
+                prior=GammaPrior(),
             )
+        )
+
+
+class ExpSinSquared(Kernel):
+    """ExpSinSquared kernel
+
+    The ExpSinSquared periodic kernel:
+
+        k(x, x') = exp( -4 Σ_i sin²(π |x_i - x'_i|/ p) / l )
+
+    where p is the periodicity and l is the lengthscale.
+
+    This kernel is equivalent to a Squared Exponential kernel
+    where the input is mapped as:
+
+        x → [cos(x), sin(x)]
+
+    """
+
+    def __init__(self, active_dims=None):
+        self._kernel_base = expsinsquared_kernel_base
+        super().__init__(active_dims)
+
+    def default_params(self):
+        return dict(
+            lengthscale=Parameter(
+                value=1.0,
+                trainable=True,
+                bijector=Softplus(),
+                prior=GammaPrior(),
+            ),
+            periodicity=Parameter(
+                value=2 * jnp.pi,
+                trainable=False,
+                bijector=Softplus(),
+                prior=GammaPrior(),
+            ),
         )
 
 
