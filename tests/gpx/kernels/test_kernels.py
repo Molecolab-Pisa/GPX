@@ -26,8 +26,8 @@ def reference_linear_kernel(x1, x2, params):
     K = np.zeros((n1, n2))
     for i in range(n1):
         for j in range(n2):
-            for l in range(m1):
-                K[i, j] = K[i, j] + x1[i, l] * x2.T[l, j]
+            for k in range(m1):
+                K[i, j] = K[i, j] + x1[i, k] * x2.T[k, j]
     return K
 
 
