@@ -112,6 +112,41 @@ def polynomial_kernel(
 
 
 # =============================================================================
+# No Intercept Polynomial Kernel
+# =============================================================================
+
+
+def _no_intercept_polynomial_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, degree: ArrayLike, offset: ArrayLike
+) -> Array:
+    return ((offset + jnp.dot(x1, x2)) ** degree) - (offset**degree)
+
+
+@jit
+def no_intercept_polynomial_kernel_base(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    return _no_intercept_polynomial_kernel_base(x1, x2, degree, offset)
+
+
+def _no_intercept_polynomial_kernel(
+    x1: ArrayLike, x2: ArrayLike, degree: ArrayLike, offset: ArrayLike
+) -> Array:
+    return ((offset + x1 @ x2.T) ** degree) - (offset**degree)
+
+
+@jit
+def no_intercept_polynomial_kernel(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    return _no_intercept_polynomial_kernel(x1, x2, degree, offset)
+
+
+# =============================================================================
 # Squared Exponential Kernel
 # =============================================================================
 
@@ -608,13 +643,25 @@ class Polynomial(Kernel):
         k(x, x') = (c + x∙x')^(d)
 
     where c is the offset and d is the degree.
+
+    If 'no_intercept' is specified, the constant term is subtracted:
+
+        k(x, x') = (c + x∙x')^(d) - (c)^(d)
     """
 
-    def __init__(self, active_dims: ArrayLike = None) -> None:
-        self._kernel_base = polynomial_kernel_base
+    def __init__(
+        self, active_dims: ArrayLike = None, no_intercept: bool = False
+    ) -> None:
+        if no_intercept:
+            self._kernel_base = no_intercept_polynomial_kernel_base
+        else:
+            self._kernel_base = polynomial_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(polynomial_kernel, self.active_dims)
+        if no_intercept:
+            self.k = self.filter_input(no_intercept_polynomial_kernel, self.active_dims)
+        else:
+            self.k = self.filter_input(polynomial_kernel, self.active_dims)
 
     def default_params(self):
         return dict(
