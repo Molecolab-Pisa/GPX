@@ -284,7 +284,7 @@ def _fit(
         k_mean = None
 
     C_mm = sigma**2 * C_mm + jnp.dot(K_mn, K_mn.T) + 1e-10 * jnp.eye(x_locs.shape[0])
-    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
+    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y))
 
     return c, mu, k_mean
 
@@ -327,7 +327,7 @@ def _fit_derivs(
         k_mean = None
 
     C_mm = sigma**2 * C_mm + jnp.dot(K_mn, K_mn.T) + 1e-10 * jnp.eye(x_locs.shape[0])
-    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y)).reshape(-1, 1)
+    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y))
 
     return c, mu, k_mean
 
@@ -428,7 +428,7 @@ def _predict(
         k_mean_train_test = jnp.mean(K_mn, axis=0)
         K_mn = kernel_center(K_mn, k_mean)
 
-    mu = mu + jnp.dot(c.T, K_mn).reshape(-1, 1)
+    mu = mu + jnp.dot(K_mn.T, c)
 
     if full_covariance:
         m = x_locs.shape[0]
@@ -484,7 +484,7 @@ def _predict_derivs(
         k_mean_train_test = jnp.mean(K_mn, axis=0)
         K_mn = kernel_center(K_mn, k_mean)
 
-    mu = mu + jnp.dot(c.T, K_mn).reshape(-1, 1)
+    mu = mu + jnp.dot(K_mn.T, c)
 
     if full_covariance:
         m = x_locs.shape[0]
