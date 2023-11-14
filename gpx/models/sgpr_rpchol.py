@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import warnings
 from functools import partial
 from typing import Callable, Dict, Optional, Tuple
 
@@ -11,22 +10,19 @@ import jax.scipy as jsp
 from jax import Array, jit
 from jax._src import prng
 from jax.typing import ArrayLike
-from typing_extensions import Self
 
 from ..bijectors import Softplus
 from ..kernels.approximations import rpcholesky
 from ..kernels.operations import kernel_center, kernel_center_test_test
-from ..mean_functions import data_mean
-from ..optimizers import NLoptWrapper, scipy_minimize, scipy_minimize_derivs
+from ..mean_functions import data_mean, zero_mean
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, is_parameter
 from ..priors import NormalPrior
+from .base import BaseGP
 from .utils import (
     _check_object_is_callable,
     _check_object_is_type,
     _check_recursive_dict_type,
-    randomized_minimization,
-    randomized_minimization_derivs,
     sample,
 )
 
@@ -112,7 +108,7 @@ def _log_marginal_likelihood_derivs(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
-    mu = 0.0
+    mu = mean_function(y)
     y = y - mu
     n = y.shape[0]
 
@@ -205,7 +201,7 @@ def log_marginal_likelihood_derivs(
         key=state.key,
         n_locs=int(state.n_locs),  # has to be static, so passed as int
         kernel=state.kernel,
-        mean_function=state.mean_function,
+        mean_function=zero_mean,
         center_kernel=state.center_kernel,
     )
 
@@ -624,7 +620,7 @@ def predict_derivs(
         x=x,
         jacobian=jacobian,
         c=state.c,
-        mu=state.mu,
+        mu=0.0,
         x_locs=state.x_locs,
         jacobian_locs=state.jacobian_locs,
         kernel=state.kernel,
@@ -821,7 +817,7 @@ def init(
 # =============================================================================
 
 
-class SGPR_RPChol:
+class SGPR_RPChol(BaseGP):
     _init_default = dict(is_fitted=False, c=None, y_mean=None, k_mean=None)
 
     def __init__(
@@ -862,400 +858,20 @@ class SGPR_RPChol:
             loss_fn=loss_fn,
         )
 
-    @classmethod
-    def from_state(cls, state: ModelState) -> "SGPR_RPChol":
-        self = cls.__new__(cls)
-        self.state = state
-        return self
-
-    def init(
-        self,
-        kernel: Callable,
-        n_locs: int,
-        key: prng.PRNGKeyArray,
-        mean_function: Callable = data_mean,
-        kernel_params: Dict[str, Parameter] = None,
-        sigma: Parameter = None,
-        loss_fn: Callable = neg_log_marginal_likelihood,
-        center_kernel: bool = False,
-    ) -> ModelState:
-        "resets model state"
-        return init(
-            kernel=kernel,
-            n_locs=n_locs,
-            key=key,
-            mean_function=mean_function,
-            kernel_params=kernel_params,
-            sigma=sigma,
-            loss_fn=loss_fn,
-            center_kernel=center_kernel,
-        )
-
-    def default_params(self) -> Dict[str, Parameter]:
-        "default model parameters"
-        return default_params()
-
-    def print(self) -> None:
-        "prints the model parameters"
-        return self.state.print_params()
-
-    def log_marginal_likelihood(
-        self, x: ArrayLike, y: ArrayLike, return_negative: Optional[bool] = False
-    ) -> Array:
-        """log marginal likelihood for SGPR (projected processes)
-
-            lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
-
-            H = K_nm (K_mm)⁻¹ K_mn
-
-        Args:
-            x: observations
-            y: labels
-            return_negative: whether to return the negative of the lml
-        """
-        lml = log_marginal_likelihood(
-            self.state,
-            x=x,
-            y=y,
-        )
-        if return_negative:
-            return -lml
-
-        return lml
-
-    def log_marginal_likelihood_derivs(
-        self,
-        x: ArrayLike,
-        y: ArrayLike,
-        jacobian: ArrayLike,
-        return_negative: Optional[bool] = False,
-    ) -> Array:
-        """log marginal likelihood for SGPR (projected processes)
-
-            lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
-
-            H = K_nm (K_mm)⁻¹ K_mn
-
-        Args:
-            x: observations
-            y: labels
-            jacobian: jacobian of x
-            return_negative: whether to return the negative of the lml
-        """
-        lml = log_marginal_likelihood_derivs(
-            self.state,
-            x=x,
-            y=y,
-            jacobian=jacobian,
-        )
-        if return_negative:
-            return -lml
-
-        return lml
-
-    def fit(
-        self,
-        x: ArrayLike,
-        y: ArrayLike,
-        minimize: Optional[bool] = True,
-        num_restarts: Optional[int] = 0,
-        key: prng.PRNGKeyArray = None,
-        return_history: Optional[bool] = False,
-    ) -> Self:
-        """fits a SGPR (projected processes)
-
-            μ = m(y)
-
-            c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn (y - mu)
-
-        Args:
-            x: observations
-            y: labels
-            minimize: whether to tune the parameters to optimize the loss.
-            num_restarts: number of restarts with randomization to do.
-                          If 0, the model is fitted once without any randomization.
-
-        Notes:
-
-        (1) m(y) is the mean function of the real distribution of data. By default,
-            we don't make assumptions on the mean of the prior distribution, so it
-            is set to the mean value of the input y:
-
-                 μ = (1/n) Σ_i y_i.
-
-        (2) Randomized_minimization requires to optimize the log marginal likelihood.
-            In order to optimize with randomized restarts you need to provide a valid
-            JAX PRNGKey.
-        """
-        if minimize:
-            minimization_function = scipy_minimize
-            self.state, optres, *history = randomized_minimization(
-                key=key,
-                state=self.state,
-                x=x,
-                y=y,
-                minimization_function=minimization_function,
-                num_restarts=num_restarts,
-                return_history=return_history,
-            )
-            self.optimize_results_ = optres
-
-            # if the optimization is failed, print a warning
-            if not optres.success:
-                warnings.warn(
-                    "optimization returned with error: {:d}. ({:s})".format(
-                        optres.status, optres.message
-                    ),
-                    stacklevel=2,
-                )
-
-        self.state = fit(self.state, x=x, y=y)
-
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_locs_ = self.state.x_locs
-        self.x_train = x
-        self.y_train = y
-        if return_history:
-            self.states_history_ = history[0]
-            self.losses_history_ = history[1]
-
-        return self
-
-    def fit_nlopt(
-        self,
-        x: ArrayLike,
-        y: ArrayLike,
-        opt: NLoptWrapper,
-        minimize=True,
-        key=None,
-        num_restarts=0,
-        return_history=False,
-    ) -> Self:
-        if minimize:
-            minimization_function = opt.optimize
-            self.state, optres, *history = randomized_minimization(
-                key=key,
-                state=self.state,
-                x=x,
-                y=y,
-                minimization_function=minimization_function,
-                num_restarts=num_restarts,
-                return_history=return_history,
-            )
-            self.optimize_results_ = optres
-
-            if optres < 0:
-                warnings.warn(
-                    "optimization returned with error: {:d}".format(optres),
-                    stacklevel=2,
-                )
-
-        self.state = fit(self.state, x=x, y=y)
-
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_locs_ = self.state.x_locs
-        self.x_train = x
-        self.y_train = y
-        if return_history:
-            self.states_history_ = history[0]
-            self.losses_history_ = history[1]
-
-        return self
-
-    def fit_derivs(
-        self,
-        x: ArrayLike,
-        y: ArrayLike,
-        jacobian: ArrayLike,
-        minimize: Optional[bool] = True,
-        num_restarts: Optional[int] = 0,
-        key: prng.PRNGKeyArray = None,
-        return_history: Optional[bool] = False,
-    ) -> Self:
-        """fits a SGPR (projected processes)
-
-            μ = 0.
-
-            c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn (y - mu)
-
-        Args:
-            x: observations
-            y: labels
-            jacobian: jacobian of x
-            minimize: whether to tune the parameters to optimize the
-                          log marginal likelihood
-            num_restarts: number of restarts with randomization to do.
-                          If 0, the model is fitted once without any randomization.
-
-        Notes:
-
-        (1) m(y) is the mean function of the real distribution of data. By default,
-            we don't make assumptions on the mean of the prior distribution, so it
-            is set to the mean value of the input y:
-
-                 μ = (1/n) Σ_i y_i.
-
-        (2) Randomized_minimization requires to optimize the log marginal likelihood.
-            In order to optimize with randomized restarts you need to provide a valid
-            JAX PRNGKey.
-        """
-        if minimize:
-            minimization_function = scipy_minimize_derivs
-            self.state, optres, *history = randomized_minimization_derivs(
-                key=key,
-                state=self.state,
-                x=x,
-                y=y,
-                jacobian=jacobian,
-                minimization_function=minimization_function,
-                num_restarts=num_restarts,
-                return_history=return_history,
-            )
-            self.optimize_results_ = optres
-
-            # if the optimization is failed, print a warning
-            if not optres.success:
-                warnings.warn(
-                    "optimization returned with error: {:d}. ({:s})".format(
-                        optres.status, optres.message
-                    ),
-                    stacklevel=2,
-                )
-
-        self.state = fit_derivs(self.state, x=x, y=y, jacobian=jacobian)
-
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_locs_ = self.state.x_locs
-        self.x_train = x
-        self.y_train = y
-        self.jacobian_locs = self.state.jacobian_locs
-        self.jacobian_train = jacobian
-        if return_history:
-            self.states_history_ = history[0]
-            self.losses_history_ = history[1]
-
-        return self
-
-    def predict(self, x: ArrayLike, full_covariance: Optional[bool] = False) -> Array:
-        """predicts with a SGPR (projected processes)
-
-            μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-            C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
-
-        Args:
-            x: observations
-            full_covariance: whether to return the covariance matrix too
-        """
-        if not hasattr(self, "c_"):
-            class_name = self.__class__.__name__
-            raise RuntimeError(
-                f"{class_name} is not fitted yet."
-                "Call 'fit' before using this model for prediction."
-            )
-        return predict(self.state, x=x, full_covariance=full_covariance)
-
-    def predict_derivs(
-        self, x: ArrayLike, jacobian: ArrayLike, full_covariance: Optional[bool] = False
-    ) -> Array:
-        """predicts with a SGPR (projected processes)
-
-            μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-            C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
-
-        Args:
-            x: observations
-            jacobian: jacobian of x
-            full_covariance: whether to return the covariance matrix too
-        """
-        if not hasattr(self, "c_"):
-            class_name = self.__class__.__name__
-            raise RuntimeError(
-                f"{class_name} is not fitted yet."
-                "Call 'fit' before using this model for prediction."
-            )
-        return predict_derivs(
-            self.state, x=x, jacobian=jacobian, full_covariance=full_covariance
-        )
-
-    def sample(
-        self,
-        key: prng.PRNGKeyArray,
-        x: ArrayLike,
-        n_samples: Optional[int] = 1,
-        kind: Optional[str] = "prior",
-    ) -> Array:
-        """draws samples from a SGPR (projected processes)
-
-        Args:
-            key: JAX PRNGKey
-            x: observations
-            n_samples: number of samples to draw
-            kind: whether to draw samples from the prior ('prior')
-                  or from the posterior ('posterior')
-        """
-        if kind == "prior":
-            return sample_prior(key, state=self.state, x=x, n_samples=n_samples)
-        elif kind == "posterior":
-            return sample_posterior(key, state=self.state, x=x, n_samples=n_samples)
-        else:
-            raise ValueError(
-                f"kind can be either 'prior' or 'posterior', you provided {kind}"
-            )
-
-    def sample_derivs(
-        self,
-        key: prng.PRNGKeyArray,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        n_samples: Optional[int] = 1,
-        kind: Optional[str] = "prior",
-    ) -> Array:
-        """draws samples from a SGPR (projected processes)
-
-        Args:
-            key: JAX PRNGKey
-            x: observations
-            jacobian: jacobian of x
-            n_samples: number of samples to draw
-            kind: whether to draw samples from the prior ('prior')
-                  or from the posterior ('posterior')
-        """
-        if kind == "prior":
-            return sample_prior_derivs(
-                key, state=self.state, x=x, jacobian=jacobian, n_samples=n_samples
-            )
-        elif kind == "posterior":
-            return sample_posterior_derivs(
-                key, state=self.state, x=x, jacobian=jacobian, n_samples=n_samples
-            )
-        else:
-            raise ValueError(
-                f"kind can be either 'prior' or 'posterior', you provided {kind}"
-            )
-
-    def save(self, state_file: str) -> Dict:
-        """saves the model state values to file"""
-        return self.state.save(state_file)
-
-    def load(self, state_file: str) -> Self:
-        """loads the model state values from file"""
-        self.state = self.state.load(state_file)
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_train = self.state.x_train
-        self.y_train = self.state.y_train
-        return self
-
-    def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True) -> Self:
-        """Creates a new model state with randomized parameter values"""
-        if reset:
-            new_state = self.state.randomize(key, opt=self._init_default)
-        else:
-            new_state = self.state.randomize(key)
-
-        return self.from_state(new_state)
+    # parameters
+    _default_params_fun = staticmethod(default_params)
+    _init_fun = staticmethod(init)
+    # lml
+    _lml_fun = staticmethod(log_marginal_likelihood)
+    _lml_derivs_fun = staticmethod(log_marginal_likelihood_derivs)
+    # fit policies
+    _fit_fun = staticmethod(fit)
+    _fit_derivs_fun = staticmethod(fit_derivs)
+    # prediction policies
+    _predict_fun = staticmethod(predict)
+    _predict_derivs_fun = staticmethod(predict_derivs)
+    # sample policies
+    _sample_prior_fun = staticmethod(sample_prior)
+    _sample_posterior_fun = staticmethod(sample_posterior)
+    _sample_prior_derivs_fun = staticmethod(sample_prior_derivs)
+    _sample_posterior_derivs_fun = staticmethod(sample_posterior_derivs)
