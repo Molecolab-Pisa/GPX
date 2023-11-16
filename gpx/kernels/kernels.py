@@ -1,7 +1,7 @@
 from typing import Callable, Dict
 
 import jax.numpy as jnp
-from jax import Array, jit
+from jax import Array, custom_jvp, jit
 from jax.typing import ArrayLike
 
 from ..bijectors import Identity, Softplus
@@ -265,13 +265,15 @@ def matern32_kernel(
 # =============================================================================
 
 
+@custom_jvp
 def _matern52_kernel_base(
     x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
 ) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = jnp.sqrt(5.0) * euclidean_distance(z1, z2)
-    return (1.0 + d + d**2 / 3.0) * jnp.exp(-d)
+    d2 = 5.0 * jnp.sum((z1 - z2) ** 2)
+    d = jnp.sqrt(jnp.maximum(d2, 1e-36))
+    return (1.0 + d + d2 / 3.0) * jnp.exp(-d)
 
 
 @jit
@@ -297,6 +299,45 @@ def matern52_kernel(
     lengthscale = params["lengthscale"].value
     return _matern52_kernel(x1, x2, lengthscale)
 
+
+def _matern52_kernel_base_t0(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    diff = jnp.sqrt(5.0) * (z1 - z2)
+    d = jnp.sqrt(jnp.maximum(jnp.sum(diff**2), 1e-36))
+    return -(jnp.sqrt(5.0) / (3.0 * lengthscale)) * (1 + d) * jnp.exp(-d) * diff
+
+
+def _matern52_kernel_base_t1(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    return -_matern52_kernel_base_t0(x1, x2, lengthscale)
+
+
+def _matern52_kernel_base_t2(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    diff = jnp.sqrt(5.0) * (z1 - z2)
+    d = jnp.sqrt(jnp.maximum(jnp.sum(diff**2), 1e-36))
+    return 1.0 / (3.0 * lengthscale) * jnp.exp(-d) * d**2 * (1 + d)
+
+
+_matern52_kernel_base.defjvps(
+    lambda x1_dot, primal_out, x1, x2, lengthscale: (
+        _matern52_kernel_base_t0(x1, x2, lengthscale) @ x1_dot
+    ).reshape(primal_out.shape),
+    lambda x2_dot, primal_out, x1, x2, lengthscale: (
+        _matern52_kernel_base_t1(x1, x2, lengthscale) @ x2_dot
+    ).reshape(primal_out.shape),
+    lambda lengthscale_dot, primal_out, x1, x2, lengthscale: (
+        jnp.atleast_1d(_matern52_kernel_base_t2(x1, x2, lengthscale))
+        @ jnp.atleast_1d(lengthscale_dot)
+    ).reshape(primal_out.shape),
+)
 
 # =============================================================================
 # Periodic kernels
