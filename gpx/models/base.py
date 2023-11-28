@@ -17,6 +17,26 @@ class BaseGP:
     def __repr__(self):
         return repr(self.print())
 
+    @property
+    def c_(self):
+        return self.state.c
+
+    @property
+    def mu_(self):
+        return self.state.mu
+
+    @property
+    def x_train(self):
+        return self.state.x_train
+
+    @property
+    def y_train(self):
+        return self.state.y_train
+
+    @property
+    def jacobian_train(self):
+        return self.state.jacobian_train
+
     @classmethod
     def from_state(cls, state: ModelState):
         "Instantiate the GP class from a ModelState"
@@ -31,10 +51,6 @@ class BaseGP:
     def load(self, state_file: str) -> Self:
         "Loads the ModelState values from file"
         self.state = self.state.load(state_file)
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_train = self.state.x_train
-        self.y_train = self.state.y_train
         return self
 
     def init(self, *args, **kwargs) -> ModelState:
@@ -121,7 +137,12 @@ class BaseGP:
         "Print the model parameters"
         return self.state.print_params()
 
-    def predict(self, x: ArrayLike, full_covariance: Optional[bool] = False) -> Array:
+    def predict(
+        self,
+        x: ArrayLike,
+        full_covariance: Optional[bool] = False,
+        iterative: Optional[bool] = False,
+    ) -> Array:
         """Predicts the output on new data
 
         Args:
@@ -132,10 +153,24 @@ class BaseGP:
             C_nn: predicted covariance
         """
         self._check_is_fitted()
-        return self._predict_fun(self.state, x=x, full_covariance=full_covariance)
+        if iterative:
+            if full_covariance:
+                raise RuntimeError(
+                    "full_covariance=True is not compatible with an"
+                    " iterative prediction"
+                )
+            return self._predict_iter_fun(self.state, x=x)
+        else:
+            return self._predict_dense_fun(
+                self.state, x=x, full_covariance=full_covariance
+            )
 
     def predict_derivs(
-        self, x: ArrayLike, jacobian: ArrayLike, full_covariance: Optional[bool] = False
+        self,
+        x: ArrayLike,
+        jacobian: ArrayLike,
+        full_covariance: Optional[bool] = False,
+        iterative: Optional[bool] = False,
     ) -> Array:
         """Predicts the output derivatives on new data.
 
@@ -148,12 +183,27 @@ class BaseGP:
             C_nn: predicted covariance
         """
         self._check_is_fitted()
-        return self._predict_derivs_fun(
-            self.state, x=x, jacobian=jacobian, full_covariance=full_covariance
-        )
+        if iterative:
+            if full_covariance:
+                raise RuntimeError(
+                    "full_covariance=True is not compatible with an"
+                    " iterative prediction"
+                )
+            return self._predict_derivs_iter_fun(self.state, x=x, jacobian=jacobian)
+        else:
+            return self._predict_derivs_dense_fun(
+                self.state, x=x, jacobian=jacobian, full_covariance=full_covariance
+            )
 
     def log_marginal_likelihood(
-        self, x: ArrayLike, y: ArrayLike, return_negative: Optional[bool] = False
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        return_negative: Optional[bool] = False,
+        iterative=False,
+        num_evals=None,
+        num_lanczos=None,
+        lanczos_key=None,
     ) -> Array:
         """Computes the log marginal likelihood.
 
@@ -162,7 +212,18 @@ class BaseGP:
             y: labels
             return_negative: whether to return the negative of the lml
         """
-        lml = self._lml_fun(self.state, x=x, y=y)
+        if iterative:
+            lml = self._lml_iter_fun(
+                self.state,
+                x=x,
+                y=y,
+                num_evals=num_evals,
+                num_lanczos=num_lanczos,
+                lanczos_key=lanczos_key,
+            )
+        else:
+            lml = self._lml_dense_fun(self.state, x=x, y=y)
+
         if return_negative:
             return -lml
         return lml
@@ -182,13 +243,13 @@ class BaseGP:
             jacobian: jacobian of x
             return_negative: whether to return the negative of the lml
         """
-        lml = self._lml_derivs_fun(self.state, x=x, y=y, jacobian=jacobian)
+        lml = self._lml_derivs_dense_fun(self.state, x=x, y=y, jacobian=jacobian)
         if return_negative:
             return -lml
         return lml
 
     def is_fitted(self):
-        return hasattr(self, "c_")
+        return hasattr(self.state, "c")
 
     def _check_is_fitted(self):
         if not self.is_fitted():
@@ -206,6 +267,7 @@ class BaseGP:
         num_restarts: Optional[int] = 0,
         key: prng.PRNGKeyArray = None,
         return_history: Optional[bool] = False,
+        iterative: Optional[bool] = False,
     ) -> Self:
         """fits the model
 
@@ -255,12 +317,11 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        self.state = self._fit_fun(self.state, x=x, y=y)
+        if iterative:
+            self.state = self._fit_iter_fun(self.state, x=x, y=y)
+        else:
+            self.state = self._fit_dense_fun(self.state, x=x, y=y)
 
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_train = x
-        self.y_train = y
         if return_history:
             self.states_history_ = history[0]
             self.losses_history_ = history[1]
@@ -276,6 +337,7 @@ class BaseGP:
         num_restarts: Optional[int] = 0,
         key: prng.PRNGKeyArray = None,
         return_history: Optional[bool] = False,
+        iterative: Optional[bool] = False,
     ) -> Self:
         """fits the model
 
@@ -330,13 +392,15 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        self.state = self._fit_derivs_fun(self.state, x=x, y=y, jacobian=jacobian)
+        if iterative:
+            self.state = self._fit_derivs_iter_fun(
+                self.state, x=x, y=y, jacobian=jacobian
+            )
+        else:
+            self.state = self._fit_derivs_dense_fun(
+                self.state, x=x, y=y, jacobian=jacobian
+            )
 
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_train = x
-        self.y_train = y
-        self.jacobian_train = jacobian
         if return_history:
             self.states_history_ = history[0]
             self.losses_history_ = history[1]
@@ -352,6 +416,7 @@ class BaseGP:
         key=None,
         num_restarts=0,
         return_history=False,
+        iterative: Optional[bool] = False,
     ) -> Self:
         if minimize:
             minimization_function = opt.optimize
@@ -372,12 +437,11 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        self.state = self._fit_fun(self.state, x=x, y=y)
+        if iterative:
+            self.state = self._fit_iter_fun(self.state, x=x, y=y)
+        else:
+            self.state = self._fit_dense_fun(self.state, x=x, y=y)
 
-        self.c_ = self.state.c
-        self.mu_ = self.state.mu
-        self.x_train = x
-        self.y_train = y
         if return_history:
             self.states_history_ = history[0]
             self.losses_history_ = history[1]

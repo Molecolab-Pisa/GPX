@@ -1,21 +1,33 @@
 from __future__ import annotations
 
-from functools import partial
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional
 
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
-from jax import Array, jit
+from jax import Array
 from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..bijectors import Softplus
-from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..mean_functions import data_mean, zero_mean
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter, is_parameter
-from ..priors import NormalPrior
+from ..priors import GammaPrior
+from ._gpr import (
+    _A_derivs_lhs,
+    _A_lhs,
+    _fit_dense,
+    _fit_derivs_dense,
+    _fit_derivs_iter,
+    _fit_iter,
+    _lml_dense,
+    _lml_derivs_dense,
+    _lml_iter,
+    _predict_dense,
+    _predict_derivs_dense,
+    _predict_derivs_iter,
+    _predict_iter,
+)
 from .base import BaseGP
 from .utils import (
     _check_object_is_callable,
@@ -28,47 +40,7 @@ from .utils import (
 # Standard Gaussian Process Regression: functions
 # =============================================================================
 
-
-@partial(jit, static_argnums=[3, 4, 5])
-def _log_marginal_likelihood(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    y: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: Optional[bool] = False,
-) -> Array:
-    """log marginal likelihood for standard gaussian process
-
-    lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    m = y.shape[0]
-    mu = mean_function(y)
-
-    y = y - mu
-    C_mm = kernel(x, x, kernel_params)
-
-    if center_kernel:
-        k_mean = jnp.mean(C_mm, axis=0)
-        C_mm = kernel_center(C_mm, k_mean)
-
-    C_mm = C_mm + sigma**2 * jnp.eye(m) + 1e-10 * jnp.eye(m)
-
-    L_m = jsp.linalg.cholesky(C_mm, lower=True)
-    cy = jsp.linalg.solve_triangular(L_m, y, lower=True)
-
-    mll = -0.5 * jnp.sum(jnp.square(cy))
-    mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
-    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
-
-    # normalize by the number of samples
-    mll = mll / m
-
-    return mll
+# Functions to compute the log marginal likelihood, priors, and posteriors
 
 
 def log_marginal_likelihood(
@@ -87,13 +59,25 @@ def log_marginal_likelihood(
     Returns:
         lml: log marginal likelihood
     """
-    return _log_marginal_likelihood(
+    return _lml_dense(
         params=state.params,
         x=x,
         y=y,
         kernel=state.kernel,
         mean_function=state.mean_function,
-        center_kernel=state.center_kernel,
+    )
+
+
+def log_marginal_likelihood_iter(state, x, y, num_evals, num_lanczos, lanczos_key):
+    return _lml_iter(
+        params=state.params,
+        x=x,
+        y=y,
+        kernel=state.kernel,
+        mean_function=state.mean_function,
+        num_evals=int(num_evals),
+        num_lanczos=int(num_lanczos),
+        key=lanczos_key,
     )
 
 
@@ -115,14 +99,13 @@ def log_marginal_likelihood_derivs(
     Returns:
         lml: log marginal likelihood
     """
-    kernel = partial(state.kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
-    return _log_marginal_likelihood(
+    return _lml_derivs_dense(
         params=state.params,
         x=x,
+        jacobian=jacobian,
         y=y,
-        kernel=kernel,
+        kernel=state.kernel,
         mean_function=zero_mean,
-        center_kernel=state.center_kernel,
     )
 
 
@@ -167,6 +150,10 @@ def neg_log_marginal_likelihood(state: ModelState, x: ArrayLike, y: ArrayLike) -
     return -log_marginal_likelihood(state=state, x=x, y=y)
 
 
+def neg_log_marginal_likelihood_iter(state, x, y):
+    return -log_marginal_likelihood_iter(state, x, y)
+
+
 def neg_log_marginal_likelihood_derivs(
     state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
 ) -> Array:
@@ -186,46 +173,13 @@ def neg_log_posterior_derivs(
     return -log_posterior_derivs(state=state, x=x, y=y, jacobian=jacobian)
 
 
-@partial(jit, static_argnums=[3, 4, 5])
-def _fit(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    y: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: bool,
-) -> Tuple[Array, Array]:
-    """fits a standard gaussian process
-
-    μ = m(y)
-
-    c = (K_nn + σ²I)⁻¹y
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    mu = mean_function(y)
-    y = y - mu
-    C_mm = kernel(x, x, kernel_params)
-
-    if center_kernel:
-        k_mean = jnp.mean(C_mm, axis=0)
-        C_mm = kernel_center(C_mm, k_mean)
-    else:
-        k_mean = None
-
-    C_mm = C_mm + sigma**2 * jnp.eye(y.shape[0]) + 1e-10 * jnp.eye(y.shape[0])
-    c = jnp.linalg.solve(C_mm, y)
-
-    return c, mu, k_mean
+# Functions to fit a GPR
 
 
 def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     """fits a standard gaussian process
 
         μ = m(y)
-
         c = (K_nn + σ²I)⁻¹y
 
     Args:
@@ -235,17 +189,41 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     Returns:
         state: fitted model state
     """
-    c, mu, k_mean = _fit(
+    c, mu = _fit_dense(
         params=state.params,
         x=x,
         y=y,
         kernel=state.kernel,
         mean_function=state.mean_function,
-        center_kernel=state.center_kernel,
     )
-    state = state.update(
-        dict(x_train=x, y_train=y, c=c, mu=mu, k_mean=k_mean, is_fitted=True)
+    state = state.update(dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True))
+    return state
+
+
+def fit_iter(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
+    """fits a standard GPR iteratively
+
+    Fits a standard GPR solving the linear system iteratively
+    with Conjugated Gradient.
+
+    μ = m(y)
+    c = (K(x, x) + σ²I)⁻¹y
+
+    Args:
+        state: model state
+        x: observations
+        y: labels
+    Returns:
+        state: fitted model state
+    """
+    c, mu = _fit_iter(
+        params=state.params,
+        x=x,
+        y=y,
+        kernel=state.kernel,
+        mean_function=state.mean_function,
     )
+    state = state.update(dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True))
     return state
 
 
@@ -255,8 +233,7 @@ def fit_derivs(
     """fits a standard gaussian process
 
         μ = 0.
-
-        c = (K_nn + σ²I)⁻¹y
+        c = (∂∂K_nn + σ²I)⁻¹y
 
     Args:
         state: model state
@@ -266,14 +243,13 @@ def fit_derivs(
     Returns:
         state: fitted model state
     """
-    kernel = partial(state.kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
-    c, mu, k_mean = _fit(
+    c, mu = _fit_derivs_dense(
         params=state.params,
         x=x,
+        jacobian=jacobian,
         y=y,
-        kernel=kernel,
+        kernel=state.kernel,
         mean_function=zero_mean,  # zero mean
-        center_kernel=state.center_kernel,
     )
     state = state.update(
         dict(
@@ -282,115 +258,53 @@ def fit_derivs(
             jacobian_train=jacobian,
             c=c,
             mu=mu,
-            k_mean=k_mean,
             is_fitted=True,
         )
     )
     return state
 
 
-@partial(jit, static_argnums=[5, 6, 7])
-def _predict(
-    params: Dict[str, Parameter],
-    x_train: ArrayLike,
-    x: ArrayLike,
-    c: ArrayLike,
-    mu: ArrayLike,
-    kernel: Callable,
-    full_covariance: Optional[bool] = False,
-    center_kernel: Optional[bool] = False,
-    k_mean: Optional[ArrayLike] = None,
-) -> Array:
-    """predicts with standard gaussian process
+def fit_derivs_iter(
+    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+) -> ModelState:
+    """fits a standard GPR iteratively when training on derivatives
 
-    μ = K_nm (K_mm + σ²)⁻¹y
+    Fits a standard GPR solving the linear system iteratively with
+    Conjugate Gradient when training on derivative values.
 
-    C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+    μ = 0.
+    c = (∂∂K(x, x) + σ²I)⁻¹y
 
+    Args:
+        state: model state
+        x: observations
+        y: labels
+        jacobian: jacobian of x
+    Returns:
+        state: fitted model state
     """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    K_mn = kernel(x_train, x, kernel_params)
-
-    if center_kernel:
-        k_mean_train_test = K_mn.mean(0)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    mu = mu + jnp.dot(K_mn.T, c)
-
-    if full_covariance:
-        C_mm = kernel(x_train, x_train, kernel_params)
-        if center_kernel:
-            C_mm = kernel_center(C_mm, k_mean)
-
-        C_mm = C_mm + sigma**2 * jnp.eye(K_mn.shape[0])
-        L_m = jsp.linalg.cholesky(C_mm, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-
-        C_nn = kernel(x, x, kernel_params)
-
-        if center_kernel:
-            C_nn = kernel_center_test_test(C_nn, k_mean, k_mean_train_test)
-
-        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
-        return mu, C_nn
-
-    return mu
-
-
-@partial(jit, static_argnums=[7, 8, 9])
-def _predict_derivs(
-    params: Dict[str, Parameter],
-    x_train: ArrayLike,
-    jacobian_train: ArrayLike,
-    x: ArrayLike,
-    jacobian: ArrayLike,
-    c: ArrayLike,
-    mu: ArrayLike,
-    kernel: Callable,
-    full_covariance: Optional[bool] = False,
-    center_kernel: Optional[bool] = False,
-    k_mean: Optional[ArrayLike] = None,
-) -> Array:
-    """predicts with standard gaussian process
-
-    μ = K_nm (K_mm + σ²)⁻¹y
-
-    C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    K_mn = kernel.d01kj(x_train, x, kernel_params, jacobian_train, jacobian)
-
-    if center_kernel:
-        k_mean_train_test = K_mn.mean(0)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    mu = mu + jnp.dot(K_mn.T, c)
-
-    if full_covariance:
-        C_mm = kernel.d01kj(
-            x_train, x_train, kernel_params, jacobian_train, jacobian_train
+    c, mu = _fit_derivs_iter(
+        params=state.params,
+        x=x,
+        jacobian=jacobian,
+        y=y,
+        kernel=state.kernel,
+        mean_function=zero_mean,  # zero mean
+    )
+    state = state.update(
+        dict(
+            x_train=x,
+            y_train=y,
+            jacobian_train=jacobian,
+            c=c,
+            mu=mu,
+            is_fitted=True,
         )
-        if center_kernel:
-            C_mm = kernel_center(C_mm, k_mean)
+    )
+    return state
 
-        C_mm = C_mm + sigma**2 * jnp.eye(K_mn.shape[0])
-        L_m = jsp.linalg.cholesky(C_mm, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
 
-        C_nn = kernel.d01kj(x, x, kernel_params, jacobian, jacobian)
-
-        if center_kernel:
-            C_nn = kernel_center_test_test(C_nn, k_mean, k_mean_train_test)
-
-        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
-        return mu, C_nn
-
-    return mu
+# Functions to predict with GPR
 
 
 def predict(
@@ -401,7 +315,6 @@ def predict(
     """predicts with standard gaussian process
 
         μ = K_nm (K_mm + σ²)⁻¹y
-
         C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
 
     Args:
@@ -417,7 +330,7 @@ def predict(
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
         )
-    return _predict(
+    return _predict_dense(
         params=state.params,
         x_train=state.x_train,
         x=x,
@@ -425,8 +338,36 @@ def predict(
         mu=state.mu,
         kernel=state.kernel,
         full_covariance=full_covariance,
-        center_kernel=state.center_kernel,
-        k_mean=state.k_mean,
+    )
+
+
+def predict_iter(
+    state: ModelState,
+    x: ArrayLike,
+) -> Array:
+    """predicts with GPR
+
+    Predicts with GPR without instantiating the full matrix.
+    The contraction with the linear coefficients is performed
+    iteratively.
+
+    Args:
+        state: model state
+        x: observations
+    Returns:
+        μ: predicted mean
+    """
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Model is not fitted. Run `fit` to fit the model before prediction."
+        )
+    return _predict_iter(
+        params=state.params,
+        x_train=state.x_train,
+        x=x,
+        c=state.c,
+        mu=state.mu,
+        kernel=state.kernel,
     )
 
 
@@ -439,13 +380,10 @@ def predict_derivs(
     """predicts with standard gaussian process
 
         μ = K_nm (K_mm + σ²)⁻¹y
-
         C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
 
     Args:
         state: model state
-        x_train: train observations
-        jacobian_train: jacobian of x_train
         x: observations
         jacobian: jacobian of x
         full_covariance: whether to return the covariance matrix too
@@ -457,7 +395,7 @@ def predict_derivs(
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
         )
-    return _predict_derivs(
+    return _predict_derivs_dense(
         params=state.params,
         x_train=state.x_train,
         jacobian_train=state.jacobian_train,
@@ -467,8 +405,40 @@ def predict_derivs(
         mu=0.0,  # zero mean
         kernel=state.kernel,
         full_covariance=full_covariance,
-        center_kernel=state.center_kernel,
-        k_mean=state.k_mean,
+    )
+
+
+def predict_derivs_iter(
+    state: ModelState,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+) -> Array:
+    """predicts derivative values with GPR
+
+    Predicts the derivative values with GPR.
+    The contraction with the linear coefficients is performed
+    iteratively.
+
+    Args:
+        state: model state
+        x: observations
+        jacobian: jacobian of x
+    Returns:
+        μ: predicted mean
+    """
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Model is not fitted. Run `fit` to fit the model before prediction."
+        )
+    return _predict_derivs_iter(
+        params=state.params,
+        x_train=state.x_train,
+        jacobian_train=state.jacobian_train,
+        x=x,
+        jacobian=jacobian,
+        c=state.c,
+        mu=0.0,
+        kernel=state.kernel,
     )
 
 
@@ -490,19 +460,8 @@ def sample_prior(
     Returns:
         samples: samples from the prior distribution
     """
-    kernel = state.kernel
-    kernel_params = state.params["kernel_params"]
-    sigma = state.params["sigma"].value
-
     mean = jnp.zeros(x.shape)
-    cov = kernel(x, x, kernel_params)
-
-    if state.center_kernel:
-        k_mean = jnp.mean(cov, axis=0)
-        cov = kernel_center(cov, k_mean)
-
-    cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
-
+    cov = _A_lhs(x, x, state.params, state.kernel, noise=True)
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
@@ -525,19 +484,10 @@ def sample_prior_derivs(
     Returns:
         samples: samples from the prior distribution
     """
-    kernel = state.kernel
-    kernel_params = state.params["kernel_params"]
-    sigma = state.params["sigma"].value
-
     mean = jnp.zeros(x.shape)
-    cov = kernel.d01kj(x, x, kernel_params, jacobian, jacobian)
-
-    if state.center_kernel:
-        k_mean = jnp.mean(cov, axis=0)
-        cov = kernel_center(cov, k_mean)
-
-    cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
-
+    cov = _A_derivs_lhs(
+        x, jacobian, x, jacobian, state.params, state.kernel, noise=True
+    )
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
@@ -564,7 +514,6 @@ def sample_posterior(
         )
     mean, cov = predict(state, x=x, full_covariance=True)
     cov += 1e-10 * jnp.eye(cov.shape[0])
-
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
@@ -593,7 +542,6 @@ def sample_posterior_derivs(
         )
     mean, cov = predict_derivs(state, x=x, jacobian=jacobian, full_covariance=True)
     cov += 1e-10 * jnp.eye(cov.shape[0])
-
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
 
 
@@ -602,7 +550,7 @@ def default_params() -> Dict[str, Parameter]:
         value=1.0,
         trainable=True,
         bijector=Softplus(),
-        prior=NormalPrior(loc=0.0, scale=1.0),
+        prior=GammaPrior(),
     )
     return dict(sigma=sigma)
 
@@ -613,7 +561,6 @@ def init(
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
     loss_fn: Callable = neg_log_marginal_likelihood,
-    center_kernel: bool = False,
 ) -> ModelState:
     """initializes the model state of a gaussian process
 
@@ -622,7 +569,6 @@ def init(
         kernel_params: kernel parameters
         sigma: standard deviation of gaussian noise
         loss_fn: loss function. Default is negative log marginal likelihood
-        center_kernel: whether to center in feature space
     Returns:
         state: model state
     """
@@ -650,8 +596,6 @@ def init(
         "is_fitted": False,
         "c": None,
         "mu": None,
-        "center_kernel": center_kernel,
-        "k_mean": None,
     }
 
     return ModelState(kernel, mean_function, params, **opt)
@@ -663,7 +607,7 @@ def init(
 
 
 class GPR(BaseGP):
-    _init_default = dict(is_fitted=False, c=None, mu=None, k_mean=None)
+    _init_default = dict(is_fitted=False, c=None, mu=None)
 
     def __init__(
         self,
@@ -672,7 +616,6 @@ class GPR(BaseGP):
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = neg_log_marginal_likelihood,
-        center_kernel: bool = False,
     ) -> None:
         """
         Args:
@@ -680,7 +623,6 @@ class GPR(BaseGP):
             kernel_params: kernel parameters
             sigma: standard deviation of the gaussian noise
             loss_fn: loss function
-            center_kernel: whether to center in feature space
 
         Note:
             It is always required to specify the loss function
@@ -693,21 +635,25 @@ class GPR(BaseGP):
             kernel_params=kernel_params,
             sigma=sigma,
             loss_fn=loss_fn,
-            center_kernel=center_kernel,
         )
 
     # parameters
     _default_params_fun = staticmethod(default_params)
     _init_fun = staticmethod(init)
     # lml
-    _lml_fun = staticmethod(log_marginal_likelihood)
-    _lml_derivs_fun = staticmethod(log_marginal_likelihood_derivs)
+    _lml_dense_fun = staticmethod(log_marginal_likelihood)
+    _lml_iter_fun = staticmethod(log_marginal_likelihood_iter)
+    _lml_derivs_dense_fun = staticmethod(log_marginal_likelihood_derivs)
     # fit policies
-    _fit_fun = staticmethod(fit)
-    _fit_derivs_fun = staticmethod(fit_derivs)
+    _fit_dense_fun = staticmethod(fit)
+    _fit_iter_fun = staticmethod(fit_iter)
+    _fit_derivs_dense_fun = staticmethod(fit_derivs)
+    _fit_derivs_iter_fun = staticmethod(fit_derivs_iter)
     # prediction policies
-    _predict_fun = staticmethod(predict)
-    _predict_derivs_fun = staticmethod(predict_derivs)
+    _predict_dense_fun = staticmethod(predict)
+    _predict_iter_fun = staticmethod(predict_iter)
+    _predict_derivs_dense_fun = staticmethod(predict_derivs)
+    _predict_derivs_iter_fun = staticmethod(predict_derivs_iter)
     # sample policies
     _sample_prior_fun = staticmethod(sample_prior)
     _sample_posterior_fun = staticmethod(sample_posterior)
