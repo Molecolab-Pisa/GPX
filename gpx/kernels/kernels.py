@@ -869,7 +869,7 @@ class ExpSinSquared(Kernel):
         )
 
 
-class Sum:
+class Sum(Kernel):
     """Class representing the sum of two kernels
 
     *   kernel function (self.k)
@@ -888,25 +888,43 @@ class Sum:
     where params1 and params2 are standard GPX parameters for kernels.
     """
 
-    def __init__(self, kernel1: Kernel, kernel2: Kernel) -> None:
-        # kernel
-        self._kernel_base = sum_kernels(kernel1._kernel_base, kernel2._kernel_base)
-        self.k = sum_kernels(kernel1.k, kernel2.k)
+    def __init__(
+        self, kernel1: Kernel, kernel2: Kernel, active_dims: ArrayLike = None
+    ) -> None:
+        # components
         self.kernel1 = kernel1
         self.kernel2 = kernel2
 
+        # kernel base
+        self._kernel_base = sum_kernels(kernel1._kernel_base, kernel2._kernel_base)
+
+        # inherit from Kernel class and pass active dims
+        super().__init__(active_dims)
+
+        # faster evaluation of the kernels
+        self.k = self.filter_input(sum_kernels(kernel1.k, kernel2.k), self.active_dims)
+
         # derivative/hessian kernel
-        self.d0k = sum_kernels(kernel1.d0k, kernel2.d0k)
-        self.d1k = sum_kernels(kernel1.d1k, kernel2.d1k)
-        self.d01k = sum_kernels(kernel1.d01k, kernel2.d01k)
+        self.d0k = self.filter_input(
+            sum_kernels(kernel1.d0k, kernel2.d0k), self.active_dims
+        )
+        self.d1k = self.filter_input(
+            sum_kernels(kernel1.d1k, kernel2.d1k), self.active_dims
+        )
+        self.d01k = self.filter_input(
+            sum_kernels(kernel1.d01k, kernel2.d01k), self.active_dims
+        )
 
         # derivative/hessian kernel-jacobian products
-        self.d0kj = sum_kernels_jac(kernel1.d0kj, kernel2.d0kj)
-        self.d1kj = sum_kernels_jac(kernel1.d1kj, kernel2.d1kj)
-        self.d01kj = sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj)
-
-    def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
-        return self.k(x1, x2, params)
+        self.d0kj = self.filter_input_jac(
+            sum_kernels_jac(kernel1.d0kj, kernel2.d0kj), self.active_dims
+        )
+        self.d1kj = self.filter_input_jac(
+            sum_kernels_jac(kernel1.d1kj, kernel2.d1kj), self.active_dims
+        )
+        self.d01kj = self.filter_input_jac2(
+            sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj), self.active_dims
+        )
 
     def default_params(self):
         # simply delegate
@@ -916,7 +934,7 @@ class Sum:
         }
 
 
-class Prod:
+class Prod(Kernel):
     """Class representing the Schur (element-wise) product of two kernels
 
     *   kernel function (self.k)
@@ -935,49 +953,68 @@ class Prod:
     where params1 and params2 are standard GPX parameters for kernels.
     """
 
-    def __init__(self, kernel1: Kernel, kernel2: Kernel) -> None:
-        # kernel
-        self._kernel_base = prod_kernels(kernel1._kernel_base, kernel2._kernel_base)
-        self.k = prod_kernels(kernel1.k, kernel2.k)
+    def __init__(
+        self, kernel1: Kernel, kernel2: Kernel, active_dims: ArrayLike = None
+    ) -> None:
         self.kernel1 = kernel1
         self.kernel2 = kernel2
 
+        # kernel base
+        self._kernel_base = prod_kernels(kernel1._kernel_base, kernel2._kernel_base)
+
+        # inherit from Kernel class and pass active dims
+        super().__init__(active_dims)
+
+        # faster evaluation of the kernels
+        self.k = self.filter_input(prod_kernels(kernel1.k, kernel2.k), self.active_dims)
+
         # derivative/hessian kernel
-        self.d0k = prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d0k, kernel2.d0k, 0)
-        self.d1k = prod_kernels_deriv(
-            kernel1.k, kernel2.k, kernel1.d1k, kernel2.d1k, -1
+        self.d0k = self.filter_input(
+            prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d0k, kernel2.d0k, 0),
+            self.active_dims,
         )
-        self.d01k = prod_kernels_deriv01(
-            kernel1.k,
-            kernel2.k,
-            kernel1.d0k,
-            kernel2.d0k,
-            kernel1.d1k,
-            kernel2.d1k,
-            kernel1.d01k,
-            kernel2.d01k,
+        self.d1k = self.filter_input(
+            prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d1k, kernel2.d1k, -1),
+            self.active_dims,
+        )
+        self.d01k = self.filter_input(
+            prod_kernels_deriv01(
+                kernel1.k,
+                kernel2.k,
+                kernel1.d0k,
+                kernel2.d0k,
+                kernel1.d1k,
+                kernel2.d1k,
+                kernel1.d01k,
+                kernel2.d01k,
+            ),
+            self.active_dims,
         )
 
         # derivative/hessian kernel-jacobian products
-        self.d0kj = prod_kernels_deriv_jac(
-            kernel1.k, kernel2.k, kernel1.d0kj, kernel2.d0kj, 0
+        self.d0kj = self.filter_input_jac(
+            prod_kernels_deriv_jac(kernel1.k, kernel2.k, kernel1.d0kj, kernel2.d0kj, 0),
+            self.active_dims,
         )
-        self.d1kj = prod_kernels_deriv_jac(
-            kernel1.k, kernel2.k, kernel1.d1kj, kernel2.d1kj, -1
+        self.d1kj = self.filter_input_jac(
+            prod_kernels_deriv_jac(
+                kernel1.k, kernel2.k, kernel1.d1kj, kernel2.d1kj, -1
+            ),
+            self.active_dims,
         )
-        self.d01kj = prod_kernels_deriv01_jac(
-            kernel1.k,
-            kernel2.k,
-            kernel1.d0kj,
-            kernel2.d0kj,
-            kernel1.d1kj,
-            kernel2.d1kj,
-            kernel1.d01kj,
-            kernel2.d01kj,
+        self.d01kj = self.filter_input_jac2(
+            prod_kernels_deriv01_jac(
+                kernel1.k,
+                kernel2.k,
+                kernel1.d0kj,
+                kernel2.d0kj,
+                kernel1.d1kj,
+                kernel2.d1kj,
+                kernel1.d01kj,
+                kernel2.d01kj,
+            ),
+            self.active_dims,
         )
-
-    def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
-        return self.k(x1, x2, params)
 
     def default_params(self):
         # simply delegate
