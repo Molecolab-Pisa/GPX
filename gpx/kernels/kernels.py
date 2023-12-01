@@ -7,7 +7,7 @@ from jax.typing import ArrayLike
 from ..bijectors import Identity, Softplus
 from ..parameters.parameter import Parameter
 from ..priors import GammaPrior, NormalPrior
-from ..utils import euclidean_distance, squared_distances
+from ..utils import squared_distances
 from .kernelizers import grad_kernelize, kernelize
 from .operations import (
     prod_kernels,
@@ -194,7 +194,8 @@ def _matern12_kernel_base(
 ) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = euclidean_distance(z1, z2)
+    d2 = jnp.sum((z1 - z2) ** 2)
+    d = jnp.sqrt(jnp.maximum(d2, 1e-36))
     return jnp.exp(-d)
 
 
@@ -227,12 +228,14 @@ def matern12_kernel(
 # =============================================================================
 
 
+@custom_jvp
 def _matern32_kernel_base(
     x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
 ) -> Array:
     z1 = x1 / lengthscale
     z2 = x2 / lengthscale
-    d = jnp.sqrt(3.0) * euclidean_distance(z1, z2)
+    d2 = 3.0 * jnp.sum((z1 - z2) ** 2)
+    d = jnp.sqrt(jnp.maximum(d2, 1e-36))
     return (1.0 + d) * jnp.exp(-d)
 
 
@@ -258,6 +261,46 @@ def matern32_kernel(
 ) -> Array:
     lengthscale = params["lengthscale"].value
     return _matern32_kernel(x1, x2, lengthscale)
+
+
+def _matern32_kernel_base_t0(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    diff = jnp.sqrt(3.0) * (z1 - z2)
+    d = jnp.sqrt(jnp.maximum(jnp.sum(diff**2), 1e-36))
+    return -jnp.sqrt(3.0) / lengthscale * jnp.exp(-d) * diff
+
+
+def _matern32_kernel_base_t1(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    return -_matern32_kernel_base_t0(x1, x2, lengthscale)
+
+
+def _matern32_kernel_base_t2(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike
+) -> Array:
+    z1 = x1 / lengthscale
+    z2 = x2 / lengthscale
+    diff = jnp.sqrt(3.0) * (z1 - z2)
+    d = jnp.sqrt(jnp.maximum(jnp.sum(diff**2), 1e-36))
+    return 1.0 / lengthscale * jnp.exp(-d) * d**2
+
+
+_matern32_kernel_base.defjvps(
+    lambda x1_dot, primal_out, x1, x2, lengthscale: (
+        _matern32_kernel_base_t0(x1, x2, lengthscale) @ x1_dot
+    ).reshape(primal_out.shape),
+    lambda x2_dot, primal_out, x1, x2, lengthscale: (
+        _matern32_kernel_base_t1(x1, x2, lengthscale) @ x2_dot
+    ).reshape(primal_out.shape),
+    lambda lengthscale_dot, primal_out, x1, x2, lengthscale: (
+        jnp.atleast_1d(_matern32_kernel_base_t2(x1, x2, lengthscale))
+        @ jnp.atleast_1d(lengthscale_dot)
+    ).reshape(primal_out.shape),
+)
 
 
 # =============================================================================
