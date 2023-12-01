@@ -22,6 +22,7 @@ from ._gpr import (
     _fit_iter,
     _lml_dense,
     _lml_derivs_dense,
+    _lml_derivs_iter,
     _lml_iter,
     _predict_dense,
     _predict_derivs_dense,
@@ -77,7 +78,7 @@ def log_marginal_likelihood_iter(state, x, y, num_evals, num_lanczos, lanczos_ke
         mean_function=state.mean_function,
         num_evals=int(num_evals),
         num_lanczos=int(num_lanczos),
-        key=lanczos_key,
+        lanczos_key=lanczos_key,
     )
 
 
@@ -106,6 +107,28 @@ def log_marginal_likelihood_derivs(
         y=y,
         kernel=state.kernel,
         mean_function=zero_mean,
+    )
+
+
+def log_marginal_likelihood_derivs_iter(
+    state,
+    x,
+    y,
+    jacobian,
+    num_evals,
+    num_lanczos,
+    lanczos_key,
+):
+    return _lml_derivs_iter(
+        params=state.params,
+        x=x,
+        jacobian=jacobian,
+        y=y,
+        kernel=state.kernel,
+        mean_function=zero_mean,
+        num_evals=int(num_evals),
+        num_lanczos=int(num_lanczos),
+        lanczos_key=lanczos_key,
     )
 
 
@@ -150,8 +173,10 @@ def neg_log_marginal_likelihood(state: ModelState, x: ArrayLike, y: ArrayLike) -
     return -log_marginal_likelihood(state=state, x=x, y=y)
 
 
-def neg_log_marginal_likelihood_iter(state, x, y):
-    return -log_marginal_likelihood_iter(state, x, y)
+def neg_log_marginal_likelihood_iter(state, x, y, num_evals, num_lanczos, lanczos_key):
+    return -log_marginal_likelihood_iter(
+        state, x, y, num_evals, num_lanczos, lanczos_key
+    )
 
 
 def neg_log_marginal_likelihood_derivs(
@@ -159,6 +184,27 @@ def neg_log_marginal_likelihood_derivs(
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood_derivs(state=state, x=x, y=y, jacobian=jacobian)
+
+
+def neg_log_marginal_likelihood_derivs_iter(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    num_evals,
+    num_lanczos,
+    lanczos_key,
+) -> Array:
+    "Returns the negative log marginal likelihood"
+    return -log_marginal_likelihood_derivs_iter(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
 
 
 def neg_log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
@@ -644,6 +690,7 @@ class GPR(BaseGP):
     _lml_dense_fun = staticmethod(log_marginal_likelihood)
     _lml_iter_fun = staticmethod(log_marginal_likelihood_iter)
     _lml_derivs_dense_fun = staticmethod(log_marginal_likelihood_derivs)
+    _lml_derivs_iter_fun = staticmethod(log_marginal_likelihood_derivs_iter)
     # fit policies
     _fit_dense_fun = staticmethod(fit)
     _fit_iter_fun = staticmethod(fit_iter)

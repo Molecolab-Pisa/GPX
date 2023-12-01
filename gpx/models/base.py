@@ -234,6 +234,10 @@ class BaseGP:
         y: ArrayLike,
         jacobian: ArrayLike,
         return_negative: Optional[bool] = False,
+        iterative=False,
+        num_evals=None,
+        num_lanczos=None,
+        lanczos_key=None,
     ) -> Array:
         """Computes the log marginal likelihood using the hessian kernel.
 
@@ -243,7 +247,18 @@ class BaseGP:
             jacobian: jacobian of x
             return_negative: whether to return the negative of the lml
         """
-        lml = self._lml_derivs_dense_fun(self.state, x=x, y=y, jacobian=jacobian)
+        if iterative:
+            lml = self._lml_derivs_iter_fun(
+                self.state,
+                x=x,
+                jacobian=jacobian,
+                y=y,
+                num_evals=num_evals,
+                num_lanczos=num_lanczos,
+                lanczos_key=lanczos_key,
+            )
+        else:
+            lml = self._lml_derivs_dense_fun(self.state, x=x, y=y, jacobian=jacobian)
         if return_negative:
             return -lml
         return lml

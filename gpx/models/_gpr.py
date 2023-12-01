@@ -464,7 +464,6 @@ def _lml_dense(
 
     mll = -0.5 * jnp.sum(jnp.square(cy))
     mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
-    jax.debug.print("determinant dense = {i2}", i2=jnp.sum(jnp.log(jnp.diag(L_m))))
     mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
 
     # normalize by the number of samples
@@ -474,7 +473,7 @@ def _lml_dense(
 
 
 @partial(jit, static_argnums=(3, 4, 5, 6))
-def _lml_iter(params, x, y, kernel, mean_function, num_evals, num_lanczos, key):
+def _lml_iter(params, x, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key):
     m = y.shape[0]
     c, mu = _fit_iter(
         params=params, x=x, y=y, kernel=kernel, mean_function=mean_function
@@ -489,7 +488,7 @@ def _lml_iter(params, x, y, kernel, mean_function, num_evals, num_lanczos, key):
         num_evals=int(num_evals),
         dim_mat=int(m),
         num_lanczos=int(num_lanczos),
-        key=key,
+        key=lanczos_key,
     )
     mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
 
@@ -519,3 +518,43 @@ def _lml_derivs_dense(
     """
     kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
     return _lml_dense(params, x, y, kernel, mean_function)
+
+
+def _lml_derivs_iter(
+    params, x, jacobian, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key
+):
+    m = y.shape[0]
+    c, mu = _fit_derivs_iter(
+        params=params,
+        x=x,
+        jacobian=jacobian,
+        y=y,
+        kernel=kernel,
+        mean_function=mean_function,
+    )
+    y = y - mu
+
+    matvec = _Ax_derivs_lhs_fun(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        noise=True,
+    )
+
+    mll = -0.5 * jnp.sum(jnp.dot(y.T, c))
+    mll -= 0.5 * lanczos_logdet(
+        matvec,
+        num_evals=int(num_evals),
+        dim_mat=int(m),
+        num_lanczos=int(num_lanczos),
+        key=lanczos_key,
+    )
+    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
+
+    # normalize by the number of samples
+    mll = mll / m
+
+    return mll
