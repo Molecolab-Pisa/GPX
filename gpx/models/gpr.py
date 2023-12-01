@@ -48,6 +48,10 @@ def log_marginal_likelihood(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """computes the log marginal likelihood for standard gaussian process
 
@@ -60,6 +64,17 @@ def log_marginal_likelihood(
     Returns:
         lml: log marginal likelihood
     """
+    if iterative:
+        return _lml_iter(
+            params=state.params,
+            x=x,
+            y=y,
+            kernel=state.kernel,
+            mean_function=state.mean_function,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
     return _lml_dense(
         params=state.params,
         x=x,
@@ -69,28 +84,20 @@ def log_marginal_likelihood(
     )
 
 
-def log_marginal_likelihood_iter(state, x, y, num_evals, num_lanczos, lanczos_key):
-    return _lml_iter(
-        params=state.params,
-        x=x,
-        y=y,
-        kernel=state.kernel,
-        mean_function=state.mean_function,
-        num_evals=int(num_evals),
-        num_lanczos=int(num_lanczos),
-        lanczos_key=lanczos_key,
-    )
-
-
 def log_marginal_likelihood_derivs(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """computes the log marginal likelihood for standard gaussian process
+    using the Hessian kernel
 
-        lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
+        lml = - ½ y^T (∂∂K_nn + σ²I)⁻¹ y - ½ log |∂∂K_nn + σ²I| - ½ n log(2π)
 
     Args:
         state: model state
@@ -100,6 +107,18 @@ def log_marginal_likelihood_derivs(
     Returns:
         lml: log marginal likelihood
     """
+    if iterative:
+        return _lml_derivs_iter(
+            params=state.params,
+            x=x,
+            jacobian=jacobian,
+            y=y,
+            kernel=state.kernel,
+            mean_function=zero_mean,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
     return _lml_derivs_dense(
         params=state.params,
         x=x,
@@ -107,28 +126,6 @@ def log_marginal_likelihood_derivs(
         y=y,
         kernel=state.kernel,
         mean_function=zero_mean,
-    )
-
-
-def log_marginal_likelihood_derivs_iter(
-    state,
-    x,
-    y,
-    jacobian,
-    num_evals,
-    num_lanczos,
-    lanczos_key,
-):
-    return _lml_derivs_iter(
-        params=state.params,
-        x=x,
-        jacobian=jacobian,
-        y=y,
-        kernel=state.kernel,
-        mean_function=zero_mean,
-        num_evals=int(num_evals),
-        num_lanczos=int(num_lanczos),
-        lanczos_key=lanczos_key,
     )
 
 
@@ -142,7 +139,15 @@ def log_prior(state: ModelState) -> Array:
     )
 
 
-def log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+def log_posterior(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
     """Computes the log posterior
 
         log p(θ|y) = log p(y|θ) + log p(θ)
@@ -150,11 +155,26 @@ def log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
     where log p(y|θ) is the log marginal likelihood.
     it is assumed that hyperparameters θ are independent.
     """
-    return log_marginal_likelihood(state=state, x=x, y=y) + log_prior(state=state)
+    return log_marginal_likelihood(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    ) + log_prior(state=state)
 
 
 def log_posterior_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """Computes the log posterior
 
@@ -164,65 +184,111 @@ def log_posterior_derivs(
     it is assumed that hyperparameters θ are independent.
     """
     return log_marginal_likelihood_derivs(
-        state=state, x=x, y=y, jacobian=jacobian
-    ) + log_prior(state=state)
-
-
-def neg_log_marginal_likelihood(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
-    "Returns the negative log marginal likelihood"
-    return -log_marginal_likelihood(state=state, x=x, y=y)
-
-
-def neg_log_marginal_likelihood_iter(state, x, y, num_evals, num_lanczos, lanczos_key):
-    return -log_marginal_likelihood_iter(
-        state, x, y, num_evals, num_lanczos, lanczos_key
-    )
-
-
-def neg_log_marginal_likelihood_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
-) -> Array:
-    "Returns the negative log marginal likelihood"
-    return -log_marginal_likelihood_derivs(state=state, x=x, y=y, jacobian=jacobian)
-
-
-def neg_log_marginal_likelihood_derivs_iter(
-    state: ModelState,
-    x: ArrayLike,
-    y: ArrayLike,
-    jacobian: ArrayLike,
-    num_evals,
-    num_lanczos,
-    lanczos_key,
-) -> Array:
-    "Returns the negative log marginal likelihood"
-    return -log_marginal_likelihood_derivs_iter(
         state=state,
         x=x,
         y=y,
         jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    ) + log_prior(state=state)
+
+
+def neg_log_marginal_likelihood(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
+    "Returns the negative log marginal likelihood"
+    return -log_marginal_likelihood(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
         lanczos_key=lanczos_key,
     )
 
 
-def neg_log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+def neg_log_marginal_likelihood_derivs(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
+    "Returns the negative log marginal likelihood"
+    return -log_marginal_likelihood_derivs(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
+
+
+def neg_log_posterior(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
     "Returns the negative log posterior"
-    return -log_posterior(state=state, x=x, y=y)
+    return -log_posterior(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
 
 
 def neg_log_posterior_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     "Returns the negative log posterior"
-    return -log_posterior_derivs(state=state, x=x, y=y, jacobian=jacobian)
+    return -log_posterior_derivs(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
 
 
 # Functions to fit a GPR
 
 
-def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
+def fit(
+    state: ModelState, x: ArrayLike, y: ArrayLike, iterative: Optional[bool] = False
+) -> ModelState:
     """fits a standard gaussian process
 
         μ = m(y)
@@ -235,34 +301,8 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     Returns:
         state: fitted model state
     """
-    c, mu = _fit_dense(
-        params=state.params,
-        x=x,
-        y=y,
-        kernel=state.kernel,
-        mean_function=state.mean_function,
-    )
-    state = state.update(dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True))
-    return state
-
-
-def fit_iter(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
-    """fits a standard GPR iteratively
-
-    Fits a standard GPR solving the linear system iteratively
-    with Conjugated Gradient.
-
-    μ = m(y)
-    c = (K(x, x) + σ²I)⁻¹y
-
-    Args:
-        state: model state
-        x: observations
-        y: labels
-    Returns:
-        state: fitted model state
-    """
-    c, mu = _fit_iter(
+    fit_func = _fit_iter if iterative else _fit_dense
+    c, mu = fit_func(
         params=state.params,
         x=x,
         y=y,
@@ -274,7 +314,11 @@ def fit_iter(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
 
 
 def fit_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
 ) -> ModelState:
     """fits a standard gaussian process
 
@@ -289,47 +333,8 @@ def fit_derivs(
     Returns:
         state: fitted model state
     """
-    c, mu = _fit_derivs_dense(
-        params=state.params,
-        x=x,
-        jacobian=jacobian,
-        y=y,
-        kernel=state.kernel,
-        mean_function=zero_mean,  # zero mean
-    )
-    state = state.update(
-        dict(
-            x_train=x,
-            y_train=y,
-            jacobian_train=jacobian,
-            c=c,
-            mu=mu,
-            is_fitted=True,
-        )
-    )
-    return state
-
-
-def fit_derivs_iter(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
-) -> ModelState:
-    """fits a standard GPR iteratively when training on derivatives
-
-    Fits a standard GPR solving the linear system iteratively with
-    Conjugate Gradient when training on derivative values.
-
-    μ = 0.
-    c = (∂∂K(x, x) + σ²I)⁻¹y
-
-    Args:
-        state: model state
-        x: observations
-        y: labels
-        jacobian: jacobian of x
-    Returns:
-        state: fitted model state
-    """
-    c, mu = _fit_derivs_iter(
+    fit_func = _fit_derivs_dense if iterative else _fit_derivs_iter
+    c, mu = fit_func(
         params=state.params,
         x=x,
         jacobian=jacobian,
@@ -357,6 +362,7 @@ def predict(
     state: ModelState,
     x: ArrayLike,
     full_covariance: Optional[bool] = False,
+    iterative: Optional[bool] = False,
 ) -> Array:
     """predicts with standard gaussian process
 
@@ -376,6 +382,19 @@ def predict(
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
         )
+    if full_covariance and iterative:
+        raise RuntimeError(
+            "'full_covariance=True' is not compatible with 'iterative=True'"
+        )
+    if iterative:
+        return _predict_iter(
+            params=state.params,
+            x_train=state.x_train,
+            x=x,
+            c=state.c,
+            mu=state.mu,
+            kernel=state.kernel,
+        )
     return _predict_dense(
         params=state.params,
         x_train=state.x_train,
@@ -387,41 +406,12 @@ def predict(
     )
 
 
-def predict_iter(
-    state: ModelState,
-    x: ArrayLike,
-) -> Array:
-    """predicts with GPR
-
-    Predicts with GPR without instantiating the full matrix.
-    The contraction with the linear coefficients is performed
-    iteratively.
-
-    Args:
-        state: model state
-        x: observations
-    Returns:
-        μ: predicted mean
-    """
-    if not state.is_fitted:
-        raise RuntimeError(
-            "Model is not fitted. Run `fit` to fit the model before prediction."
-        )
-    return _predict_iter(
-        params=state.params,
-        x_train=state.x_train,
-        x=x,
-        c=state.c,
-        mu=state.mu,
-        kernel=state.kernel,
-    )
-
-
 def predict_derivs(
     state: ModelState,
     x: ArrayLike,
     jacobian: ArrayLike,
     full_covariance: Optional[bool] = False,
+    iterative: Optional[bool] = False,
 ) -> Array:
     """predicts with standard gaussian process
 
@@ -441,6 +431,21 @@ def predict_derivs(
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
         )
+    if full_covariance and iterative:
+        raise RuntimeError(
+            "'full_covariance=True' is not compatible with 'iterative=True'"
+        )
+    if iterative:
+        return _predict_derivs_iter(
+            params=state.params,
+            x_train=state.x_train,
+            jacobian_train=state.jacobian_train,
+            x=x,
+            jacobian=jacobian,
+            c=state.c,
+            mu=0.0,
+            kernel=state.kernel,
+        )
     return _predict_derivs_dense(
         params=state.params,
         x_train=state.x_train,
@@ -451,40 +456,6 @@ def predict_derivs(
         mu=0.0,  # zero mean
         kernel=state.kernel,
         full_covariance=full_covariance,
-    )
-
-
-def predict_derivs_iter(
-    state: ModelState,
-    x: ArrayLike,
-    jacobian: ArrayLike,
-) -> Array:
-    """predicts derivative values with GPR
-
-    Predicts the derivative values with GPR.
-    The contraction with the linear coefficients is performed
-    iteratively.
-
-    Args:
-        state: model state
-        x: observations
-        jacobian: jacobian of x
-    Returns:
-        μ: predicted mean
-    """
-    if not state.is_fitted:
-        raise RuntimeError(
-            "Model is not fitted. Run `fit` to fit the model before prediction."
-        )
-    return _predict_derivs_iter(
-        params=state.params,
-        x_train=state.x_train,
-        jacobian_train=state.jacobian_train,
-        x=x,
-        jacobian=jacobian,
-        c=state.c,
-        mu=0.0,
-        kernel=state.kernel,
     )
 
 
@@ -687,20 +658,14 @@ class GPR(BaseGP):
     _default_params_fun = staticmethod(default_params)
     _init_fun = staticmethod(init)
     # lml
-    _lml_dense_fun = staticmethod(log_marginal_likelihood)
-    _lml_iter_fun = staticmethod(log_marginal_likelihood_iter)
-    _lml_derivs_dense_fun = staticmethod(log_marginal_likelihood_derivs)
-    _lml_derivs_iter_fun = staticmethod(log_marginal_likelihood_derivs_iter)
+    _lml_fun = staticmethod(log_marginal_likelihood)
+    _lml_derivs_fun = staticmethod(log_marginal_likelihood_derivs)
     # fit policies
-    _fit_dense_fun = staticmethod(fit)
-    _fit_iter_fun = staticmethod(fit_iter)
-    _fit_derivs_dense_fun = staticmethod(fit_derivs)
-    _fit_derivs_iter_fun = staticmethod(fit_derivs_iter)
+    _fit_fun = staticmethod(fit)
+    _fit_derivs_fun = staticmethod(fit_derivs)
     # prediction policies
-    _predict_dense_fun = staticmethod(predict)
-    _predict_iter_fun = staticmethod(predict_iter)
-    _predict_derivs_dense_fun = staticmethod(predict_derivs)
-    _predict_derivs_iter_fun = staticmethod(predict_derivs_iter)
+    _predict_fun = staticmethod(predict)
+    _predict_derivs_fun = staticmethod(predict_derivs)
     # sample policies
     _sample_prior_fun = staticmethod(sample_prior)
     _sample_posterior_fun = staticmethod(sample_posterior)

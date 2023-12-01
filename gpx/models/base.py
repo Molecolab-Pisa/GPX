@@ -157,17 +157,9 @@ class BaseGP:
             C_nn: predicted covariance
         """
         self._check_is_fitted()
-        if iterative:
-            if full_covariance:
-                raise RuntimeError(
-                    "full_covariance=True is not compatible with an"
-                    " iterative prediction"
-                )
-            return self._predict_iter_fun(self.state, x=x)
-        else:
-            return self._predict_dense_fun(
-                self.state, x=x, full_covariance=full_covariance
-            )
+        return self._predict_fun(
+            self.state, x=x, full_covariance=full_covariance, iterative=iterative
+        )
 
     def predict_derivs(
         self,
@@ -187,17 +179,13 @@ class BaseGP:
             C_nn: predicted covariance
         """
         self._check_is_fitted()
-        if iterative:
-            if full_covariance:
-                raise RuntimeError(
-                    "full_covariance=True is not compatible with an"
-                    " iterative prediction"
-                )
-            return self._predict_derivs_iter_fun(self.state, x=x, jacobian=jacobian)
-        else:
-            return self._predict_derivs_dense_fun(
-                self.state, x=x, jacobian=jacobian, full_covariance=full_covariance
-            )
+        return self._predict_derivs_fun(
+            self.state,
+            x=x,
+            jacobian=jacobian,
+            full_covariance=full_covariance,
+            iterative=iterative,
+        )
 
     def log_marginal_likelihood(
         self,
@@ -216,17 +204,15 @@ class BaseGP:
             y: labels
             return_negative: whether to return the negative of the lml
         """
-        if iterative:
-            lml = self._lml_iter_fun(
-                self.state,
-                x=x,
-                y=y,
-                num_evals=num_evals,
-                num_lanczos=num_lanczos,
-                lanczos_key=lanczos_key,
-            )
-        else:
-            lml = self._lml_dense_fun(self.state, x=x, y=y)
+        lml = self._lml_fun(
+            self.state,
+            x=x,
+            y=y,
+            iterative=iterative,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
 
         if return_negative:
             return -lml
@@ -251,18 +237,17 @@ class BaseGP:
             jacobian: jacobian of x
             return_negative: whether to return the negative of the lml
         """
-        if iterative:
-            lml = self._lml_derivs_iter_fun(
-                self.state,
-                x=x,
-                jacobian=jacobian,
-                y=y,
-                num_evals=num_evals,
-                num_lanczos=num_lanczos,
-                lanczos_key=lanczos_key,
-            )
-        else:
-            lml = self._lml_derivs_dense_fun(self.state, x=x, y=y, jacobian=jacobian)
+        lml = self._lml_derivs_fun(
+            self.state,
+            x=x,
+            jacobian=jacobian,
+            y=y,
+            iterative=iterative,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
+
         if return_negative:
             return -lml
         return lml
@@ -316,6 +301,7 @@ class BaseGP:
             JAX PRNGKey.
         """
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
+
         if minimize:
             minimization_function = scipy_minimize
             self.state, optres, *history = randomized_minimization(
@@ -339,10 +325,7 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        if iterative:
-            self.state = self._fit_iter_fun(self.state, x=x, y=y)
-        else:
-            self.state = self._fit_dense_fun(self.state, x=x, y=y)
+        self.state = self._fit_fun(self.state, x=x, y=y, iterative=iterative)
 
         if return_history:
             self.states_history_ = history[0]
@@ -393,6 +376,7 @@ class BaseGP:
             JAX PRNGKey.
         """
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
+
         if minimize:
             minimization_function = scipy_minimize_derivs
             self.state, optres, *history = randomized_minimization_derivs(
@@ -417,14 +401,13 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        if iterative:
-            self.state = self._fit_derivs_iter_fun(
-                self.state, x=x, y=y, jacobian=jacobian
-            )
-        else:
-            self.state = self._fit_derivs_dense_fun(
-                self.state, x=x, y=y, jacobian=jacobian
-            )
+        self.state = self._fit_derivs_fun(
+            self.state,
+            x=x,
+            y=y,
+            jacobian=jacobian,
+            iterative=iterative,
+        )
 
         if return_history:
             self.states_history_ = history[0]
@@ -445,6 +428,7 @@ class BaseGP:
         loss_kwargs=None,
     ) -> Self:
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
+
         if minimize:
             minimization_function = opt.optimize
             self.state, optres, *history = randomized_minimization(
@@ -465,10 +449,7 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        if iterative:
-            self.state = self._fit_iter_fun(self.state, x=x, y=y)
-        else:
-            self.state = self._fit_dense_fun(self.state, x=x, y=y)
+        self.state = self._fit_fun(self.state, x=x, y=y, iterative=iterative)
 
         if return_history:
             self.states_history_ = history[0]
