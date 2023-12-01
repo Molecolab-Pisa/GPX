@@ -10,7 +10,11 @@ from typing_extensions import Self
 
 from ..optimizers import NLoptWrapper, scipy_minimize, scipy_minimize_derivs
 from ..parameters import ModelState, Parameter
-from .utils import randomized_minimization, randomized_minimization_derivs
+from .utils import (
+    loss_fn_with_args,
+    randomized_minimization,
+    randomized_minimization_derivs,
+)
 
 
 class BaseGP:
@@ -283,6 +287,7 @@ class BaseGP:
         key: prng.PRNGKeyArray = None,
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
+        loss_kwargs=None,
     ) -> Self:
         """fits the model
 
@@ -310,6 +315,7 @@ class BaseGP:
             In order to optimize with randomized restarts you need to provide a valid
             JAX PRNGKey.
         """
+        loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
         if minimize:
             minimization_function = scipy_minimize
             self.state, optres, *history = randomized_minimization(
@@ -317,6 +323,7 @@ class BaseGP:
                 state=self.state,
                 x=x,
                 y=y,
+                loss_fn=loss_fn,
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
@@ -353,6 +360,7 @@ class BaseGP:
         key: prng.PRNGKeyArray = None,
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
+        loss_kwargs=None,
     ) -> Self:
         """fits the model
 
@@ -384,6 +392,7 @@ class BaseGP:
             In order to optimize with randomized restarts you need to provide a valid
             JAX PRNGKey.
         """
+        loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
         if minimize:
             minimization_function = scipy_minimize_derivs
             self.state, optres, *history = randomized_minimization_derivs(
@@ -392,6 +401,7 @@ class BaseGP:
                 x=x,
                 y=y,
                 jacobian=jacobian,
+                loss_fn=loss_fn,
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
@@ -432,7 +442,9 @@ class BaseGP:
         num_restarts=0,
         return_history=False,
         iterative: Optional[bool] = False,
+        loss_kwargs=None,
     ) -> Self:
+        loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
         if minimize:
             minimization_function = opt.optimize
             self.state, optres, *history = randomized_minimization(
@@ -440,6 +452,7 @@ class BaseGP:
                 state=self.state,
                 x=x,
                 y=y,
+                loss_fn=loss_fn,
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,

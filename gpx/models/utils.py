@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Callable, Dict, Optional
 
 import jax
@@ -57,6 +58,14 @@ def sample(
     return jnp.array(sample)
 
 
+def loss_fn_with_args(loss_fn, loss_kwargs):
+    if loss_kwargs is None:
+        return loss_fn
+    else:
+        loss_fn = partial(loss_fn, **loss_kwargs)
+        return loss_fn
+
+
 # ============================================================================
 # Loss function minimization with randomized restarts
 # ============================================================================
@@ -75,6 +84,7 @@ def randomized_minimization(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
+    loss_fn: Callable,
     minimization_function: Callable = scipy_minimize,
     num_restarts: Optional[int] = 0,
     return_history: Optional[bool] = False,
@@ -110,9 +120,9 @@ def randomized_minimization(
     opt_info = []
 
     state, *optres = minimization_function(
-        state=state, x=x, y=y, loss_fn=state.loss_fn, **opt_kwargs
+        state=state, x=x, y=y, loss_fn=loss_fn, **opt_kwargs
     )
-    loss = state.loss_fn(state=state, x=x, y=y)
+    loss = loss_fn(state=state, x=x, y=y)
 
     states.append(state)
     losses.append(loss)
@@ -123,9 +133,9 @@ def randomized_minimization(
         state = state.randomize(key)
 
         state, *optres = minimization_function(
-            state=state, x=x, y=y, loss_fn=state.loss_fn, **opt_kwargs
+            state=state, x=x, y=y, loss_fn=loss_fn, **opt_kwargs
         )
-        loss = state.loss_fn(state=state, x=x, y=y)
+        loss = loss_fn(state=state, x=x, y=y)
 
         states.append(state)
         losses.append(loss)
@@ -147,6 +157,7 @@ def randomized_minimization_derivs(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    loss_fn: Callable,
     minimization_function: Callable = scipy_minimize_derivs,
     num_restarts: Optional[int] = 0,
     return_history: Optional[bool] = False,
@@ -183,9 +194,9 @@ def randomized_minimization_derivs(
     opt_info = []
 
     state, *optres = minimization_function(
-        state=state, x=x, y=y, jacobian=jacobian, loss_fn=state.loss_fn, **opt_kwargs
+        state=state, x=x, y=y, jacobian=jacobian, loss_fn=loss_fn, **opt_kwargs
     )
-    loss = state.loss_fn(state=state, x=x, y=y, jacobian=jacobian)
+    loss = loss_fn(state=state, x=x, y=y, jacobian=jacobian)
 
     states.append(state)
     losses.append(loss)
@@ -200,10 +211,10 @@ def randomized_minimization_derivs(
             x=x,
             y=y,
             jacobian=jacobian,
-            loss_fn=state.loss_fn,
+            loss_fn=loss_fn,
             **opt_kwargs,
         )
-        loss = state.loss_fn(
+        loss = loss_fn(
             state=state,
             x=x,
             y=y,

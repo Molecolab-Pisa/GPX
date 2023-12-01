@@ -259,6 +259,8 @@ def _fit_derivs_dense(
     c = (K(x, x) + σ²I)⁻¹y
     """
     kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
+    # also flatten y
+    y = y.reshape(-1, 1)
     return _fit_dense(params, x, y, kernel, mean_function)
 
 
@@ -279,6 +281,8 @@ def _fit_derivs_iter(
     μ = m(y)
     c = (K(x, x) + σ²I)⁻¹y
     """
+    # flatten y
+    y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu
     matvec = _Ax_derivs_lhs_fun(
@@ -402,6 +406,9 @@ def _predict_derivs_dense(
         C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
         return mu, C_nn
 
+    # recover the right shape
+    ns, _, nd = jacobian.shape
+    mu = mu.reshape(ns, nd)
     return mu
 
 
@@ -432,6 +439,9 @@ def _predict_derivs_iter(
         noise=False,
     )
     mu = mu + matvec(c)
+    # recover the right shape
+    ns, _, nd = jacobian.shape
+    mu = mu.reshape(ns, nd)
     return mu
 
 
@@ -517,12 +527,16 @@ def _lml_derivs_dense(
         lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
     """
     kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
+    # flatten y
+    y = y.reshape(-1, 1)
     return _lml_dense(params, x, y, kernel, mean_function)
 
 
 def _lml_derivs_iter(
     params, x, jacobian, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key
 ):
+    # flatten y
+    y = y.reshape(-1, 1)
     m = y.shape[0]
     c, mu = _fit_derivs_iter(
         params=params,
