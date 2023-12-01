@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import functools
-import warnings
 from functools import partial
 from typing import Callable, Tuple, Union
 
@@ -9,19 +8,18 @@ import jax
 import jax.numpy as jnp
 from jax import jacfwd, jacrev, jit, vmap
 
-
-def _warn_experimental(funcname):
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            warnings.warn(
-                f"{funcname} is still experimental and not tested.", stacklevel=2
-            )
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
+# def _warn_experimental(funcname):
+#     def decorator(func):
+#         @functools.wraps(func)
+#         def wrapper(*args, **kwargs):
+#             warnings.warn(
+#                 f"{funcname} is still experimental and not tested.", stacklevel=2
+#             )
+#             return func(*args, **kwargs)
+#
+#         return wrapper
+#
+#     return decorator
 
 
 # =============================================================================
@@ -113,7 +111,6 @@ def _grad0_kernelize(kernel_func: Callable) -> Callable:
 def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacrev(kernel_func, argnums=0)
 
-    @_warn_experimental("_grad0jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian):
@@ -168,7 +165,6 @@ def _grad1_kernelize(kernel_func: Callable) -> Callable:
 def _grad1jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacrev(kernel_func, argnums=1)
 
-    @_warn_experimental("_grad1jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian):
@@ -223,7 +219,6 @@ def _grad01_kernelize(kernel_func: Callable) -> Callable:
 def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacfwd(jacrev(kernel_func, argnums=0), argnums=1)
 
-    @_warn_experimental("_grad01jac_kernelize")
     @functools.wraps(kernel_func)
     @jit
     def kernel(x1, x2, params, jacobian1, jacobian2):
