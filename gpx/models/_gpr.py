@@ -3,7 +3,6 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import Array, jit
@@ -11,6 +10,7 @@ from jax.scipy.sparse.linalg import cg
 from jax.typing import ArrayLike
 
 from ..lanczos import lanczos_logdet
+from ..operations import rowfun_to_matvec
 from ..parameters import Parameter
 
 ParameterDict = Dict[str, Parameter]
@@ -85,35 +85,14 @@ def _Ax_lhs_fun(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
-    if noise:
+    def row_fun(x1s):
+        return kernel(x1s, x2, kernel_params)
 
-        @jit
-        def matvec(z):
-            def update_row(carry, x1s):
-                # using 'kernel' adds a singleton dimension at 0
-                # that must be discarded
-                kernel_row = kernel(x1s[jnp.newaxis], x2, kernel_params).squeeze(axis=0)
-                kernel_row = kernel_row.at[carry].add(sigma**2 + 1e-10)
-                rowvec = jnp.dot(kernel_row, z)
-                carry = carry + 1
-                return carry, rowvec
+    jitter_noise = sigma**2 + 1e-10
 
-            _, res = jax.lax.scan(update_row, 0, x1)
-            return res
-
-    else:
-
-        @jit
-        def matvec(z):
-            def update_row(carry, x1s):
-                kernel_row = kernel(x1s[jnp.newaxis], x2, kernel_params).squeeze(axis=0)
-                rowvec = jnp.dot(kernel_row, z)
-                return carry, rowvec
-
-            _, res = jax.lax.scan(update_row, 0, x1)
-            return res
-
-    return matvec
+    return rowfun_to_matvec(
+        row_fun, init_val=(x1,), update_diag=noise, diag_value=jitter_noise
+    )
 
 
 def _Ax_derivs_lhs_fun(
@@ -136,58 +115,15 @@ def _Ax_derivs_lhs_fun(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
-    nr = jacobian1.shape[2]
 
-    if noise:
+    def row_fun(x1s, j1s):
+        return kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2)
 
-        @jit
-        def matvec(z):
-            def update_row(carry, xj):
-                x1s, j1s = xj
-                # this is a stripe, not a row: the first dim is the
-                # number of derivatives
-                kernel_row = kernel.d01kj(
-                    x1s[jnp.newaxis], x2, kernel_params, j1s[jnp.newaxis], jacobian2
-                )
-                # we have to add the noise + jitter to the diagonal
-                # we do so by updating the stripe block by block, where
-                # the block has the dimension of the number of rows in the
-                # slice
-                start_indices = (0, nr * carry)
-                jnoise = (sigma**2 + 1e-10) * jnp.eye(nr)
-                fill = (
-                    jax.lax.dynamic_slice(kernel_row, start_indices, (nr, nr)) + jnoise
-                )
-                kernel_row = jax.lax.dynamic_update_slice(
-                    kernel_row,
-                    fill,
-                    start_indices,
-                )
-                rowvec = jnp.dot(kernel_row, z)
-                carry = carry + 1
-                return carry, rowvec
+    jitter_noise = sigma**2 + 1e-10
 
-            _, res = jax.lax.scan(update_row, 0, (x1, jacobian1))
-            res = jnp.concatenate(res, axis=0)
-            return res
-
-    else:
-
-        @jit
-        def matvec(z):
-            def update_row(carry, xj):
-                x1s, j1s = xj
-                # this is a stripe, not a row: the first dim is the
-                # number of derivatives
-                kernel_row = kernel.d01kj(
-                    x1s[jnp.newaxis], x2, kernel_params, j1s[jnp.newaxis], jacobian2
-                )
-                rowvec = jnp.dot(kernel_row, z)
-                return carry, rowvec
-
-            _, res = jax.lax.scan(update_row, 0, (x1, jacobian1))
-            res = jnp.concatenate(res, axis=0)
-            return res
+    matvec = rowfun_to_matvec(
+        row_fun, init_val=(x1, jacobian1), update_diag=noise, diag_value=jitter_noise
+    )
 
     return matvec
 
