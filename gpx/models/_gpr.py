@@ -194,10 +194,21 @@ def _fit_derivs_dense(
     μ = m(y)
     c = (K(x, x) + σ²I)⁻¹y
     """
-    kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
     # also flatten y
     y = y.reshape(-1, 1)
-    return _fit_dense(params, x, y, kernel, mean_function)
+    mu = mean_function(y)
+    y = y - mu
+    C_mm = _A_derivs_lhs(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        noise=True,
+    )
+    c = jnp.linalg.solve(C_mm, y)
+    return c, mu
 
 
 @partial(jit, static_argnums=(4, 5))
