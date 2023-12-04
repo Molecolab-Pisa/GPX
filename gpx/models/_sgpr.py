@@ -13,6 +13,7 @@ from jax.typing import ArrayLike
 
 from ..kernels.kernels import Kernel
 from ..lanczos import lanczos_logdet
+from ..operations import rowfun_to_matvec
 from ..parameters import Parameter
 
 ParameterDict = Dict[str, Parameter]
@@ -61,38 +62,36 @@ def _Ax_lhs_fun(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
-    @jit
-    def matvec_lhs(z):
-        def update_row(carry, x1s):
-            # σ² K_mm
-            kernel_row_1 = (
-                kernel(x1s[jnp.newaxis], x1, kernel_params).squeeze(axis=0) * sigma**2
-            )
-            # K_mn K_nm
-            kernel_row_2 = jax.vmap(
-                lambda x2s: jnp.dot(
-                    kernel(x1s[jnp.newaxis], x2, kernel_params),
-                    kernel(x2, x2s[jnp.newaxis], kernel_params),
-                ).squeeze()
-            )(x1)
-            kernel_row = kernel_row_1 + kernel_row_2
-            kernel_row = kernel_row.at[carry].add(1e-10)
-            rowvec = jnp.dot(kernel_row, z)
-            carry = carry + 1
-            return carry, rowvec
+    m, _ = x1.shape
 
-        _, res = jax.lax.scan(update_row, 0, x1)
-        return res
+    def row_fun_lhs(x1s):
+        # σ² K_mm
+        kernel_row_1 = kernel(x1s, x1, kernel_params) * sigma**2
 
-    @jit
-    def matvec_rhs(z):
-        def update_row(carry, x1s):
-            kernel_row = kernel(x1s[jnp.newaxis], x2, kernel_params).squeeze(axis=0)
-            rowvec = jnp.dot(kernel_row, z)
-            return carry, rowvec
+        # K_mn∙K_nm
+        def f(x2s):
+            x2s = jnp.expand_dims(x2s, axis=0)
+            a = kernel(x1s, x2, kernel_params)
+            b = kernel(x2, x2s, kernel_params)
+            return jnp.dot(a, b)
 
-        _, res = jax.lax.scan(update_row, 0, x1)
-        return res
+        kernel_row_2 = jax.vmap(f, in_axes=0, out_axes=2)(x1)
+        kernel_row_2 = kernel_row_2.reshape(1, m)
+        return kernel_row_1 + kernel_row_2
+
+    def row_fun_rhs(x1s):
+        return kernel(x1s, x2, kernel_params)
+
+    jitter = 1e-10
+
+    matvec_lhs = rowfun_to_matvec(
+        row_fun_lhs, init_val=(x1,), update_diag=True, diag_value=jitter
+    )
+    matvec_rhs = rowfun_to_matvec(
+        row_fun_rhs,
+        init_val=(x1,),
+        update_diag=False,
+    )
 
     return matvec_lhs, matvec_rhs
 
@@ -111,65 +110,36 @@ def _Ax_derivs_lhs_fun(
     m = x1.shape[0]
     nd = jacobian1.shape[2]
 
-    @jit
-    def matvec_lhs(z):
-        def update_row(carry, xj):
-            x1s, j1s = xj
-            # σ² K_mm
-            kernel_row_1 = (
-                kernel.d01kj(
-                    x1s[jnp.newaxis], x1, kernel_params, j1s[jnp.newaxis], jacobian1
-                )
-                * sigma**2
-            )
+    def row_fun_lhs(x1s, j1s):
+        # σ² K_mm
+        kernel_row_1 = kernel.d01kj(x1s, x1, kernel_params, j1s, jacobian1) * sigma**2
 
-            # K_mn K_nm
-            def f(x2s, j2s):
-                a = kernel.d01kj(
-                    x1s[jnp.newaxis], x2, kernel_params, j1s[jnp.newaxis], jacobian2
-                )
-                b = kernel.d01kj(
-                    x2, x2s[jnp.newaxis], kernel_params, jacobian2, j2s[jnp.newaxis]
-                )
-                res = jnp.dot(a, b)
-                return res
+        # K_mn∙K_nm
+        def f(x2s, j2s):
+            x2s = jnp.expand_dims(x2s, axis=0)
+            j2s = jnp.expand_dims(j2s, axis=0)
+            a = kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2)
+            b = kernel.d01kj(x2, x2s, kernel_params, jacobian2, j2s)
+            res = jnp.dot(a, b)
+            return res
 
-            kernel_row_2 = jax.vmap(f, in_axes=(0, 0), out_axes=2)(x1, jacobian1)
-            kernel_row_2 = kernel_row_2.reshape(nd, nd * m)
-            kernel_row = kernel_row_1 + kernel_row_2
-            # we have to add the noise + jitter to the diagonal
-            # we do so by updating the stripe block by block, where
-            # the block has the dimension of the number of rows in the
-            # slice
-            start_indices = (0, nd * carry)
-            jnoise = (1e-10) * jnp.eye(nd)
-            fill = jax.lax.dynamic_slice(kernel_row, start_indices, (nd, nd)) + jnoise
-            kernel_row = jax.lax.dynamic_update_slice(
-                kernel_row,
-                fill,
-                start_indices,
-            )
-            rowvec = jnp.dot(kernel_row, z)
-            carry = carry + 1
-            return carry, rowvec
+        kernel_row_2 = jax.vmap(f, in_axes=(0, 0), out_axes=2)(x1, jacobian1)
+        kernel_row_2 = kernel_row_2.reshape(nd, nd * m)
+        return kernel_row_1 + kernel_row_2
 
-        _, res = jax.lax.scan(update_row, 0, (x1, jacobian1))
-        res = jnp.concatenate(res, axis=0)
-        return res
+    def row_fun_rhs(x1s, j1s):
+        return kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2)
 
-    @jit
-    def matvec_rhs(z):
-        def update_row(carry, xj):
-            x1s, j1s = xj
-            kernel_row = kernel.d01kj(
-                x1s[jnp.newaxis], x2, kernel_params, j1s[jnp.newaxis], jacobian2
-            )
-            rowvec = jnp.dot(kernel_row, z)
-            return carry, rowvec
+    jitter = 1e-10
 
-        _, res = jax.lax.scan(update_row, 0, (x1, jacobian1))
-        res = jnp.concatenate(res, axis=0)
-        return res
+    matvec_lhs = rowfun_to_matvec(
+        row_fun_lhs, init_val=(x1, jacobian1), update_diag=True, diag_value=jitter
+    )
+    matvec_rhs = rowfun_to_matvec(
+        row_fun_rhs,
+        init_val=(x1, jacobian1),
+        update_diag=False,
+    )
 
     return matvec_lhs, matvec_rhs
 
@@ -181,27 +151,28 @@ def _Hx_fun(
     sigma = params["sigma"].value
 
     m, _ = x1.shape
+    n, _ = x2.shape
     Kmm = kernel(x1, x1, kernel_params) + 1e-10 * jnp.eye(m)
     Kmm_inv = jnp.linalg.inv(Kmm)
 
-    @jit
-    def matvec(z):
-        def update_row(carry, x2s):
-            kernel_row = kernel(x2s[jnp.newaxis], x1, kernel_params)
-            kernel_row = jnp.dot(kernel_row, Kmm_inv)
+    def row_fun(x2s):
+        kernel_row = kernel(x2s, x1, kernel_params)
+        kernel_row = jnp.dot(kernel_row, Kmm_inv)
 
-            def f(x3s):
-                res = jnp.dot(kernel_row, kernel(x1, x3s[jnp.newaxis], kernel_params))
-                return res.squeeze()
+        def f(x3s):
+            x3s = jnp.expand_dims(x3s, axis=0)
+            res = jnp.dot(kernel_row, kernel(x1, x3s, kernel_params))
+            return res
 
-            kernel_row = jax.vmap(f)(x2)
-            kernel_row = kernel_row.at[carry].add(sigma**2 + 1e-10)
-            rowvec = jnp.dot(kernel_row, z)
-            carry = carry + 1
-            return carry, rowvec
+        kernel_row = jax.vmap(f, in_axes=0, out_axes=2)(x2)
+        kernel_row = kernel_row.reshape(1, n)
+        return kernel_row
 
-        _, res = jax.lax.scan(update_row, 0, x2)
-        return res
+    jitter_noise = sigma**2 + 1e-10
+
+    matvec = rowfun_to_matvec(
+        row_fun, init_val=(x2,), update_diag=True, diag_value=jitter_noise
+    )
 
     return matvec
 
@@ -224,45 +195,27 @@ def _Hx_derivs_fun(
     )
     Kmm_inv = jnp.linalg.inv(Kmm)
 
-    @jit
-    def matvec(z):
-        def update_row(carry, x2j):
-            x2s, j2s = x2j
-            kernel_row = kernel.d01kj(
-                x2s[jnp.newaxis], x1, kernel_params, j2s[jnp.newaxis], jacobian1
+    def row_fun(x2s, j2s):
+        kernel_row = kernel.d01kj(x2s, x1, kernel_params, j2s, jacobian1)
+        kernel_row = jnp.dot(kernel_row, Kmm_inv)
+
+        def f(x3s, j3s):
+            x3s = jnp.expand_dims(x3s, axis=0)
+            j3s = jnp.expand_dims(j3s, axis=0)
+            res = jnp.dot(
+                kernel_row, kernel.d01kj(x1, x3s, kernel_params, jacobian1, j3s)
             )
-            kernel_row = jnp.dot(kernel_row, Kmm_inv)
+            return res
 
-            def f(x3s, j3s):
-                res = jnp.dot(
-                    kernel_row,
-                    kernel.d01kj(
-                        x1, x3s[jnp.newaxis], kernel_params, jacobian1, j3s[jnp.newaxis]
-                    ),
-                )
-                return res
+        kernel_row = jax.vmap(f, in_axes=(0, 0), out_axes=2)(x2, jacobian2)
+        kernel_row = kernel_row.reshape(nd, n * nd)
+        return kernel_row
 
-            kernel_row = jax.vmap(f, in_axes=(0, 0), out_axes=2)(x2, jacobian2)
-            kernel_row = kernel_row.reshape(nd, n * nd)
-            # we have to add the noise + jitter to the diagonal
-            # we do so by updating the stripe block by block, where
-            # the block has the dimension of the number of rows in the
-            # slice
-            start_indices = (0, nd * carry)
-            jnoise = (sigma**2 + 1e-10) * jnp.eye(nd)
-            fill = jax.lax.dynamic_slice(kernel_row, start_indices, (nd, nd)) + jnoise
-            kernel_row = jax.lax.dynamic_update_slice(
-                kernel_row,
-                fill,
-                start_indices,
-            )
-            rowvec = jnp.dot(kernel_row, z)
-            carry = carry + 1
-            return carry, rowvec
+    jitter_noise = sigma**2 + 1e-10
 
-        _, res = jax.lax.scan(update_row, 0, (x2, jacobian2))
-        res = jnp.concatenate(res, axis=0)
-        return res
+    matvec = rowfun_to_matvec(
+        row_fun, init_val=(x2, jacobian2), update_diag=True, diag_value=jitter_noise
+    )
 
     return matvec
 
