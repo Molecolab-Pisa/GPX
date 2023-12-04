@@ -87,7 +87,7 @@ def _Ax_lhs_fun(
     @jit
     def matvec_rhs(z):
         def update_row(carry, x1s):
-            kernel_row = kernel(x1s[jnp.newaxis], x2, kernel_params)
+            kernel_row = kernel(x1s[jnp.newaxis], x2, kernel_params).squeeze(axis=0)
             rowvec = jnp.dot(kernel_row, z)
             return carry, rowvec
 
@@ -270,9 +270,10 @@ def _Hx_derivs_fun(
 # Functions to fit SGPR
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(4, 5))
 def _fit_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
@@ -283,7 +284,6 @@ def _fit_dense(
     μ = m(y)
     c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
     """
-    x_locs = params["x_locs"].value
     mu = mean_function(y)
     y = y - mu
     C_mm, K_mn = _A_lhs(x1=x_locs, x2=x, params=params, kernel=kernel)
@@ -291,15 +291,15 @@ def _fit_dense(
     return c, mu
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(4, 5))
 def _fit_iter(
     params: ParameterDict,
+    x_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Tuple[Array, Array]:
-    x_locs = params["x_locs"].value
     mu = mean_function(y)
     y = y - mu
     matvec_lhs, matvec_rhs = _Ax_lhs_fun(x1=x_locs, x2=x, params=params, kernel=kernel)
@@ -307,13 +307,15 @@ def _fit_iter(
     return c, mu
 
 
-@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(6, 7))
 def _fit_derivs_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
-    kernel: Callable,
     jacobian: ArrayLike,
+    kernel: Callable,
     mean_function: Callable,
 ) -> Tuple[Array, Array]:
     """fits a SGPR (projected processes)
@@ -321,8 +323,6 @@ def _fit_derivs_dense(
     μ = 0.
     c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
     """
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
     y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu
@@ -338,17 +338,17 @@ def _fit_derivs_dense(
     return c, mu
 
 
-@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(6, 7))
 def _fit_derivs_iter(
     params: ParameterDict,
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
-    kernel: Kernel,
     jacobian: ArrayLike,
+    kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Tuple[Array, Array]:
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
     y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu
@@ -367,9 +367,10 @@ def _fit_derivs_iter(
 # Functions to predict with SGPR
 
 
-@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(5, 6))
 def _predict_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
     x: ArrayLike,
     c: ArrayLike,
     mu: ArrayLike,
@@ -383,7 +384,6 @@ def _predict_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
-    x_locs = params["x_locs"].value
     m = x_locs.shape[0]
 
     K_nm = kernel(x, x_locs, kernel_params)
@@ -403,9 +403,11 @@ def _predict_dense(
     return mu
 
 
-@partial(jit, static_argnums=(5, 6))
+@partial(jit, static_argnums=(7, 8))
 def _predict_derivs_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     jacobian: ArrayLike,
     c: ArrayLike,
@@ -420,8 +422,6 @@ def _predict_derivs_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
 
     K_nm = kernel.d01kj(x, x_locs, kernel_params, jacobian, jacobian_locs)
     mu = mu + jnp.dot(K_nm, c)
@@ -452,27 +452,31 @@ def _predict_derivs_dense(
     return mu
 
 
-@partial(jit, static_argnums=(4,))
+@partial(jit, static_argnums=(5,))
 def _predict_iter(
-    params: ParameterDict, x: ArrayLike, c: ArrayLike, mu: ArrayLike, kernel: Kernel
+    params: ParameterDict,
+    x_locs: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Kernel,
 ) -> Array:
-    x_locs = params["x_locs"].value
     _, matvec = _Ax_lhs_fun(x1=x, x2=x_locs, params=params, kernel=kernel)
     mu = mu + matvec(c)
     return mu
 
 
-@partial(jit, static_argnums=(5,))
+@partial(jit, static_argnums=(7,))
 def _predict_derivs_iter(
     params: ParameterDict,
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     jacobian: ArrayLike,
     c: ArrayLike,
     mu: ArrayLike,
     kernel: Kernel,
 ) -> Array:
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
     n, _, nd = jacobian.shape
     _, matvec = _Ax_derivs_lhs_fun(
         x1=x,
@@ -490,9 +494,10 @@ def _predict_derivs_iter(
 # Functions to compute the log marginal likelihood for SGPR
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(4, 5))
 def _lml_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     kernel: Callable,
@@ -505,7 +510,6 @@ def _lml_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
-    x_locs = params["x_locs"].value
 
     m = x_locs.shape[0]
     mu = mean_function(y)
@@ -531,9 +535,10 @@ def _lml_dense(
     return mll
 
 
-@partial(jit, static_argnums=(3, 4, 5, 6))
+@partial(jit, static_argnums=(4, 5, 6, 7))
 def _lml_iter(
     params: ParameterDict,
+    x_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     kernel: Kernel,
@@ -542,8 +547,6 @@ def _lml_iter(
     num_lanczos: int,
     lanczos_key: prng.PRNGKeyArray,
 ) -> Array:
-    x_locs = params["x_locs"].value
-
     mu = mean_function(y)
     y = y - mu
     n = y.shape[0]
@@ -565,9 +568,11 @@ def _lml_iter(
     return mll
 
 
-@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(6, 7))
 def _lml_derivs_dense(
     params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
@@ -583,8 +588,6 @@ def _lml_derivs_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
 
     m = x_locs.shape[0]
     mu = mean_function(y)
@@ -610,9 +613,11 @@ def _lml_derivs_dense(
     return mll
 
 
-@partial(jit, static_argnums=(4, 5, 6, 7))
+@partial(jit, static_argnums=(6, 7, 8, 9))
 def _lml_derivs_iter(
     params: ParameterDict,
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
@@ -622,9 +627,6 @@ def _lml_derivs_iter(
     num_lanczos: int,
     lanczos_key: prng.PRNGKeyArray,
 ) -> Array:
-    x_locs = params["x_locs"].value
-    jacobian_locs = params["jacobian_locs"].value
-
     y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu

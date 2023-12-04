@@ -65,6 +65,7 @@ def log_marginal_likelihood(
     if iterative:
         return _lml_iter(
             params=state.params,
+            x_locs=state.params["x_locs"].value,
             x=x,
             y=y,
             kernel=state.kernel,
@@ -75,6 +76,7 @@ def log_marginal_likelihood(
         )
     return _lml_dense(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
         x=x,
         y=y,
         kernel=state.kernel,
@@ -109,6 +111,8 @@ def log_marginal_likelihood_derivs(
     if iterative:
         return _lml_derivs_iter(
             params=state.params,
+            x_locs=state.params["x_locs"].value,
+            jacobian_locs=state.params["jacobian_locs"].value,
             x=x,
             y=y,
             jacobian=jacobian,
@@ -120,6 +124,8 @@ def log_marginal_likelihood_derivs(
         )
     return _lml_derivs_dense(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
+        jacobian_locs=state.params["jacobian_locs"].value,
         x=x,
         y=y,
         jacobian=jacobian,
@@ -298,8 +304,9 @@ def fit(
         state: fitted model state
     """
     fit_func = _fit_iter if iterative else _fit_dense
-    c, mu, k_mean = fit_func(
+    c, mu = fit_func(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
         x=x,
         y=y,
         kernel=state.kernel,
@@ -331,8 +338,10 @@ def fit_derivs(
         state: fitted model state
     """
     fit_func = _fit_derivs_iter if iterative else _fit_derivs_dense
-    c, mu, k_mean = fit_func(
+    c, mu = fit_func(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
+        jacobian_locs=state.params["jacobian_locs"].value,
         x=x,
         y=y,
         jacobian=jacobian,
@@ -383,6 +392,7 @@ def predict(
     if iterative:
         return _predict_iter(
             params=state.params,
+            x_locs=state.params["x_locs"].value,
             x=x,
             c=state.c,
             mu=state.mu,
@@ -390,6 +400,7 @@ def predict(
         )
     return _predict_dense(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
         x=x,
         c=state.c,
         mu=state.mu,
@@ -431,6 +442,8 @@ def predict_derivs(
     if iterative:
         return _predict_derivs_iter(
             params=state.params,
+            x_locs=state.params["x_locs"].value,
+            jacobian_locs=state.params["jacobian_locs"].value,
             x=x,
             jacobian=jacobian,
             c=state.c,
@@ -439,6 +452,8 @@ def predict_derivs(
         )
     return _predict_derivs_dense(
         params=state.params,
+        x_locs=state.params["x_locs"].value,
+        jacobian_locs=state.params["jacobian_locs"].value,
         x=x,
         jacobian=jacobian,
         c=state.c,

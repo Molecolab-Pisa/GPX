@@ -1,23 +1,33 @@
 from __future__ import annotations
 
 import time
-from functools import partial
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional
 
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
-from jax import Array, jit
+from jax import Array
 from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..bijectors import Softplus
-from ..kernels.approximations import rpcholesky
-from ..kernels.operations import kernel_center, kernel_center_test_test
 from ..mean_functions import data_mean, zero_mean
 from ..parameters.model_state import ModelState
 from ..parameters.parameter import Parameter, is_parameter
 from ..priors import NormalPrior
+from ._sgpr_rpchol import (
+    _fit_dense,
+    _fit_derivs_dense,
+    _fit_derivs_iter,
+    _fit_iter,
+    _lml_dense,
+    _lml_derivs_dense,
+    _lml_derivs_iter,
+    _lml_iter,
+    _predict_dense,
+    _predict_derivs_dense,
+    _predict_derivs_iter,
+    _predict_iter,
+)
 from .base import BaseGP
 from .utils import (
     _check_object_is_callable,
@@ -31,122 +41,14 @@ from .utils import (
 # =============================================================================
 
 
-@partial(jit, static_argnums=[4, 5, 6, 7])
-def _log_marginal_likelihood(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    y: ArrayLike,
-    key: prng.PRNGKeyArray,
-    n_locs: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: Optional[bool] = False,
-) -> Array:
-    """log marginal likelihood for SGPR (projected processes)
-
-    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
-
-    H = K_nm (K_mm)⁻¹ K_mn
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    mu = mean_function(y)
-    y = y - mu
-    n = y.shape[0]
-
-    _, pivots = rpcholesky(
-        key=key, x=x, n_pivots=n_locs, kernel=kernel, kernel_params=kernel_params
-    )  # does not work with kernel centering
-
-    x_locs = x[pivots].copy()
-
-    K_mm = kernel(x_locs, x_locs, kernel_params)
-    K_mn = kernel(x_locs, x, kernel_params)
-
-    if center_kernel:
-        k_mean = jnp.mean(K_mm, axis=0)
-        K_mm = kernel_center(K_mm, k_mean)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(n_locs), lower=True)
-    G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n) + 1e-10 * jnp.eye(n)
-    L_n = jsp.linalg.cholesky(C_nn, lower=True)
-    cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
-
-    mll = -0.5 * jnp.sum(jnp.square(cy))
-    mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
-    mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
-
-    # normalize by the number of samples
-    mll = mll / n
-
-    return mll
-
-
-@partial(jit, static_argnums=[5, 6, 7, 8])
-def _log_marginal_likelihood_derivs(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    y: ArrayLike,
-    jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
-    n_locs: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: Optional[bool] = False,
-) -> Array:
-    """log marginal likelihood for SGPR (projected processes)
-
-    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
-
-    H = K_nm (K_mm)⁻¹ K_mn
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    mu = mean_function(y)
-    y = y - mu
-    n = y.shape[0]
-
-    _, pivots = rpcholesky(
-        key=key, x=x, n_pivots=n_locs, kernel=kernel, kernel_params=kernel_params
-    )  # does not work with kernel centering
-
-    x_locs = x[pivots].copy()
-    jacobian_locs = jacobian[pivots].copy()
-
-    K_mm = kernel.d01kj(x_locs, x_locs, kernel_params, jacobian_locs, jacobian_locs)
-    K_mn = kernel.d01kj(x_locs, x, kernel_params, jacobian_locs, jacobian)
-
-    if center_kernel:
-        k_mean = jnp.mean(K_mm, axis=0)
-        K_mm = kernel_center(K_mm, k_mean)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    L_m = jsp.linalg.cholesky(K_mm + 1e-10 * jnp.eye(n_locs), lower=True)
-    G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-    C_nn = jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.eye(n) + 1e-10 * jnp.eye(n)
-    L_n = jsp.linalg.cholesky(C_nn, lower=True)
-    cy = jsp.linalg.solve_triangular(L_n, y, lower=True)
-
-    mll = -0.5 * jnp.sum(jnp.square(cy))
-    mll -= jnp.sum(jnp.log(jnp.diag(L_n)))
-    mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
-
-    # normalize by the number of samples
-    mll = mll / n
-
-    return mll
-
-
 def log_marginal_likelihood(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -161,15 +63,27 @@ def log_marginal_likelihood(
     Returns:
         lml: log marginal likelihood
     """
-    return _log_marginal_likelihood(
+    if iterative:
+        return _lml_iter(
+            params=state.params,
+            x=x,
+            y=y,
+            key=state.key,
+            n_locs=int(state.n_locs),
+            kernel=state.kernel,
+            mean_function=state.mean_function,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
+    return _lml_dense(
         params=state.params,
         x=x,
         y=y,
         key=state.key,
-        n_locs=int(state.n_locs),  # has to be static, so passed as int
+        n_locs=int(state.n_locs),
         kernel=state.kernel,
         mean_function=state.mean_function,
-        center_kernel=state.center_kernel,
     )
 
 
@@ -178,6 +92,10 @@ def log_marginal_likelihood_derivs(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -193,16 +111,29 @@ def log_marginal_likelihood_derivs(
     Returns:
         lml: log marginal likelihood
     """
-    return _log_marginal_likelihood_derivs(
+    if iterative:
+        return _lml_derivs_iter(
+            params=state.params,
+            x=x,
+            y=y,
+            key=state.key,
+            n_locs=int(state.n_locs),
+            jacobian=jacobian,
+            kernel=state.kernel,
+            mean_function=zero_mean,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            lanczos_key=lanczos_key,
+        )
+    return _lml_derivs_dense(
         params=state.params,
         x=x,
         y=y,
-        jacobian=jacobian,
         key=state.key,
-        n_locs=int(state.n_locs),  # has to be static, so passed as int
+        n_locs=int(state.n_locs),
+        jacobian=jacobian,
         kernel=state.kernel,
         mean_function=zero_mean,
-        center_kernel=state.center_kernel,
     )
 
 
@@ -216,7 +147,15 @@ def log_prior(state: ModelState) -> Array:
     )
 
 
-def log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+def log_posterior(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
     """Computes the log posterior
 
         log p(θ|y) = log p(y|θ) + log p(θ)
@@ -224,11 +163,25 @@ def log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
     where log p(y|θ) is the log marginal likelihood.
     it is assumed that hyperparameters θ are independent.
     """
-    return log_marginal_likelihood(state=state, x=x, y=y) + log_prior(state=state)
+    return log_marginal_likelihood(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+    ) + log_prior(state=state)
 
 
 def log_posterior_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
 ) -> Array:
     """Computes the log posterior
 
@@ -238,133 +191,108 @@ def log_posterior_derivs(
     it is assumed that hyperparameters θ are independent.
     """
     return log_marginal_likelihood_derivs(
-        state=state, x=x, y=y, jacobian=jacobian
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
     ) + log_prior(state=state)
 
 
-def neg_log_marginal_likelihood(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
+def neg_log_marginal_likelihood(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
     "Returns the negative log marginal likelihood"
-    return -log_marginal_likelihood(state=state, x=x, y=y)
+    return -log_marginal_likelihood(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
 
 
 def neg_log_marginal_likelihood_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
-) -> Array:
-    "Returns the negative log marginal likelihood"
-    return -log_marginal_likelihood_derivs(state=state, x=x, y=y, jacobian=jacobian)
-
-
-def neg_log_posterior(state: ModelState, x: ArrayLike, y: ArrayLike) -> Array:
-    "Returns the negative log posterior"
-    return -log_posterior(state=state, x=x, y=y)
-
-
-def neg_log_posterior_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
-) -> Array:
-    "Returns the negative log posterior"
-    return -log_posterior_derivs(state=state, x=x, y=y, jacobian=jacobian)
-
-
-@partial(jit, static_argnums=[4, 5, 6, 7])
-def _fit(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    y: ArrayLike,
-    key: prng.PRNGKeyArray,
-    n_locs: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: bool,
-) -> Tuple[Array, Array]:
-    """fits a SGPR (projected processes)
-
-    μ = m(y)
-
-    c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    mu = mean_function(y)
-    y = y - mu
-
-    _, pivots = rpcholesky(
-        key=key, x=x, n_pivots=n_locs, kernel=kernel, kernel_params=kernel_params
-    )  # does not work with kernel centering
-
-    x_locs = x[pivots].copy()
-
-    K_mn = kernel(x_locs, x, kernel_params)
-
-    C_mm = kernel(x_locs, x_locs, kernel_params)
-
-    # Here we center over the induced locations
-    if center_kernel:
-        k_mean = jnp.mean(C_mm, axis=0)
-        C_mm = kernel_center(C_mm, k_mean)
-        K_mn = kernel_center(K_mn, k_mean)
-    else:
-        k_mean = None
-
-    C_mm = sigma**2 * C_mm + jnp.dot(K_mn, K_mn.T) + 1e-10 * jnp.eye(x_locs.shape[0])
-    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y))
-
-    return c, mu, k_mean, x_locs
-
-
-@partial(jit, static_argnums=[5, 6, 7, 8])
-def _fit_derivs(
-    params: Dict[str, Parameter],
+    state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
-    n_locs: ArrayLike,
-    kernel: Callable,
-    mean_function: Callable,
-    center_kernel: bool,
-) -> Tuple[Array, Array]:
-    """fits a SGPR (projected processes)
-
-    μ = 0.
-
-    c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    mu = 0.0
-    y = y - mu
-
-    _, pivots = rpcholesky(
-        key=key, x=x, n_pivots=n_locs, kernel=kernel, kernel_params=kernel_params
-    )  # does not work with kernel centering
-
-    x_locs = x[pivots].copy()
-    jacobian_locs = jacobian[pivots].copy()
-
-    K_mn = kernel.d01kj(x_locs, x, kernel_params, jacobian_locs, jacobian)
-
-    C_mm = kernel.d01kj(x_locs, x_locs, kernel_params, jacobian_locs, jacobian_locs)
-
-    # Here we center over the induced locations
-    if center_kernel:
-        k_mean = jnp.mean(C_mm, axis=0)
-        C_mm = kernel_center(C_mm, k_mean)
-        K_mn = kernel_center(K_mn, k_mean)
-    else:
-        k_mean = None
-
-    C_mm = sigma**2 * C_mm + jnp.dot(K_mn, K_mn.T) + 1e-10 * jnp.eye(C_mm.shape[0])
-    c = jnp.linalg.solve(C_mm, jnp.dot(K_mn, y))
-
-    return c, mu, k_mean, x_locs, jacobian_locs
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
+    "Returns the negative log marginal likelihood"
+    return -log_marginal_likelihood_derivs(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
 
 
-def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
+def neg_log_posterior(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
+    "Returns the negative log posterior"
+    return -log_posterior(
+        state=state,
+        x=x,
+        y=y,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
+
+
+def neg_log_posterior_derivs(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = None,
+    num_lanczos: Optional[int] = None,
+    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+) -> Array:
+    "Returns the negative log posterior"
+    return -log_posterior_derivs(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        lanczos_key=lanczos_key,
+    )
+
+
+def fit(
+    state: ModelState, x: ArrayLike, y: ArrayLike, iterative: Optional[bool] = False
+) -> ModelState:
     """fits a SGPR (projected processes)
 
         μ = m(y)
@@ -378,32 +306,28 @@ def fit(state: ModelState, x: ArrayLike, y: ArrayLike) -> ModelState:
     Returns:
         state: fitted model state
     """
-    c, mu, k_mean, x_locs = _fit(
+    fit_func = _fit_iter if iterative else _fit_dense
+    c, mu, x_locs = fit_func(
         params=state.params,
         x=x,
         y=y,
         key=state.key,
-        n_locs=int(state.n_locs),  # needs to be static, passed as int
+        n_locs=int(state.n_locs),
         kernel=state.kernel,
         mean_function=state.mean_function,
-        center_kernel=state.center_kernel,
     )
     state = state.update(
-        dict(
-            x_train=x,
-            y_train=y,
-            c=c,
-            mu=mu,
-            k_mean=k_mean,
-            is_fitted=True,
-            x_locs=x_locs,
-        )
+        dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True, x_locs=x_locs)
     )
     return state
 
 
 def fit_derivs(
-    state: ModelState, x: ArrayLike, y: ArrayLike, jacobian: ArrayLike
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    iterative: Optional[bool] = False,
 ) -> ModelState:
     """fits a SGPR (projected processes)
 
@@ -419,16 +343,16 @@ def fit_derivs(
     Returns:
         state: fitted model state
     """
-    c, mu, k_mean, x_locs, jacobian_locs = _fit_derivs(
+    fit_func = _fit_derivs_iter if iterative else _fit_derivs_dense
+    c, mu, x_locs, jacobian_locs = fit_func(
         params=state.params,
         x=x,
         y=y,
-        jacobian=jacobian,
         key=state.key,
-        n_locs=int(state.n_locs),  # needs to be static, passed as int
+        n_locs=int(state.n_locs),
+        jacobian=jacobian,
         kernel=state.kernel,
-        mean_function=state.mean_function,
-        center_kernel=state.center_kernel,
+        mean_function=zero_mean,
     )
     state = state.update(
         dict(
@@ -437,7 +361,6 @@ def fit_derivs(
             jacobian_train=jacobian,
             c=c,
             mu=mu,
-            k_mean=k_mean,
             is_fitted=True,
             x_locs=x_locs,
             jacobian_locs=jacobian_locs,
@@ -446,118 +369,11 @@ def fit_derivs(
     return state
 
 
-@partial(jit, static_argnums=[5, 6, 7])
-def _predict(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    c: ArrayLike,
-    mu: ArrayLike,
-    x_locs: ArrayLike,
-    kernel: Callable,
-    full_covariance: Optional[bool] = False,
-    center_kernel: Optional[bool] = False,
-    k_mean: Optional[ArrayLike] = None,
-) -> Array:
-    """predicts with a SGPR (projected processes)
-
-    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    K_mn = kernel(x_locs, x, kernel_params)
-
-    if center_kernel:
-        k_mean_train_test = jnp.mean(K_mn, axis=0)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    mu = mu + jnp.dot(K_mn.T, c)
-
-    if full_covariance:
-        m = x_locs.shape[0]
-        K_mm = kernel(x_locs, x_locs, kernel_params)
-        if center_kernel:
-            K_mm = kernel_center(K_mm, k_mean)
-        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * 1e-10, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        L_m = jsp.linalg.cholesky(
-            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * 1e-10,
-            lower=True,
-        )
-        H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-
-        C_nn = kernel(x, x, kernel_params)
-
-        if center_kernel:
-            C_nn = kernel_center_test_test(C_nn, k_mean, k_mean_train_test)
-
-        C_nn = C_nn - jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.dot(H_mn.T, H_mn)
-        return mu, C_nn
-
-    return mu
-
-
-@partial(jit, static_argnums=[7, 8, 9])
-def _predict_derivs(
-    params: Dict[str, Parameter],
-    x: ArrayLike,
-    jacobian: ArrayLike,
-    c: ArrayLike,
-    mu: ArrayLike,
-    x_locs: ArrayLike,
-    jacobian_locs: ArrayLike,
-    kernel: Callable,
-    full_covariance: Optional[bool] = False,
-    center_kernel: Optional[bool] = False,
-    k_mean: Optional[ArrayLike] = None,
-) -> Array:
-    """predicts with a SGPR (projected processes)
-
-    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
-
-    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
-
-    """
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    K_mn = kernel.d01kj(x_locs, x, kernel_params, jacobian_locs, jacobian)
-
-    if center_kernel:
-        k_mean_train_test = jnp.mean(K_mn, axis=0)
-        K_mn = kernel_center(K_mn, k_mean)
-
-    mu = mu + jnp.dot(K_mn.T, c)
-
-    if full_covariance:
-        m = x_locs.shape[0]
-        K_mm = kernel.d01kj(x_locs, x_locs, kernel_params, jacobian_locs, jacobian_locs)
-        if center_kernel:
-            K_mm = kernel_center(K_mm, k_mean)
-        L_m = jsp.linalg.cholesky(K_mm + jnp.eye(m) * 1e-10, lower=True)
-        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-        L_m = jsp.linalg.cholesky(
-            (sigma**2 * K_mm + jnp.dot(K_mn, K_mn.T)) + jnp.eye(m) * 1e-10,
-            lower=True,
-        )
-        H_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
-
-        C_nn = kernel.d01kj(x, x, kernel_params, jacobian, jacobian)
-
-        if center_kernel:
-            C_nn = kernel_center_test_test(C_nn, k_mean, k_mean_train_test)
-
-        C_nn = C_nn - jnp.dot(G_mn.T, G_mn) + sigma**2 * jnp.dot(H_mn.T, H_mn)
-        return mu, C_nn
-
-    return mu
-
-
 def predict(
-    state: ModelState, x: ArrayLike, full_covariance: Optional[bool] = False
+    state: ModelState,
+    x: ArrayLike,
+    full_covariance: Optional[bool] = False,
+    iterative: Optional[bool] = False,
 ) -> Array:
     """predicts with a SGPR (projected processes)
 
@@ -577,16 +393,27 @@ def predict(
         raise RuntimeError(
             "Model is not fitted. Run 'fit' to fit the model before prediction."
         )
-    return _predict(
+    if full_covariance and iterative:
+        raise RuntimeError(
+            "'full_covariance=True' is not compatible with 'iterative=True'"
+        )
+    if iterative:
+        return _predict_iter(
+            params=state.params,
+            x_locs=state.x_locs,
+            x=x,
+            c=state.c,
+            mu=state.mu,
+            kernel=state.kernel,
+        )
+    return _predict_dense(
         params=state.params,
+        x_locs=state.x_locs,
         x=x,
         c=state.c,
         mu=state.mu,
-        x_locs=state.x_locs,
         kernel=state.kernel,
         full_covariance=full_covariance,
-        center_kernel=state.center_kernel,
-        k_mean=state.k_mean,
     )
 
 
@@ -595,6 +422,7 @@ def predict_derivs(
     x: ArrayLike,
     jacobian: ArrayLike,
     full_covariance: Optional[bool] = False,
+    iterative: Optional[bool] = False,
 ) -> Array:
     """predicts with a SGPR (projected processes)
 
@@ -615,18 +443,31 @@ def predict_derivs(
         raise RuntimeError(
             "Model is not fitted. Run 'fit' to fit the model before prediction."
         )
-    return _predict_derivs(
+    if full_covariance and iterative:
+        raise RuntimeError(
+            "'full_covariance=True' is not compatible with 'iterative=True'"
+        )
+    if iterative:
+        return _predict_derivs_iter(
+            params=state.params,
+            x_locs=state.x_locs,
+            jacobian_locs=state.jacobian_locs,
+            x=x,
+            jacobian=jacobian,
+            c=state.c,
+            mu=0.0,
+            kernel=state.kernel,
+        )
+    return _predict_derivs_dense(
         params=state.params,
+        x_locs=state.x_locs,
+        jacobian_locs=state.jacobian_locs,
         x=x,
         jacobian=jacobian,
         c=state.c,
         mu=0.0,
-        x_locs=state.x_locs,
-        jacobian_locs=state.jacobian_locs,
         kernel=state.kernel,
         full_covariance=full_covariance,
-        center_kernel=state.center_kernel,
-        k_mean=state.k_mean,
     )
 
 
@@ -653,9 +494,6 @@ def sample_prior(
 
     mean = jnp.zeros(x.shape)
     cov = kernel(x, x, kernel_params)
-    if state.center_kernel:
-        k_mean = jnp.mean(cov, axis=0)
-        cov = kernel_center(cov, k_mean)
     cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
 
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
@@ -686,9 +524,6 @@ def sample_prior_derivs(
 
     mean = jnp.zeros(x.shape)
     cov = kernel.d01kj(x, x, kernel_params, jacobian, jacobian)
-    if state.center_kernel:
-        k_mean = jnp.mean(cov, axis=0)
-        cov = kernel_center(cov, k_mean)
     cov = cov + sigma * jnp.eye(cov.shape[0]) + 1e-10 * jnp.eye(cov.shape[0])
 
     return sample(key=key, mean=mean, cov=cov, n_samples=n_samples)
@@ -767,7 +602,6 @@ def init(
     kernel_params: Dict[str, Parameter] = None,
     sigma: Parameter = None,
     loss_fn: Callable = neg_log_marginal_likelihood,
-    center_kernel: bool = False,
 ) -> ModelState:
     """initializes the model state of a SGPR RPCholesky-accelerated
 
@@ -803,8 +637,6 @@ def init(
         "is_fitted": False,
         "c": None,
         "mu": None,
-        "center_kernel": center_kernel,
-        "k_mean": None,
         "n_locs": n_locs,
         "key": key,
     }
@@ -818,7 +650,7 @@ def init(
 
 
 class SGPR_RPChol(BaseGP):
-    _init_default = dict(is_fitted=False, c=None, y_mean=None, k_mean=None)
+    _init_default = dict(is_fitted=False, c=None, y_mean=None)
 
     def __init__(
         self,
@@ -829,7 +661,6 @@ class SGPR_RPChol(BaseGP):
         kernel_params: Dict[str, Parameter] = None,
         sigma: Parameter = None,
         loss_fn: Callable = neg_log_marginal_likelihood,
-        center_kernel: bool = False,
     ) -> None:
         """
         Args:
@@ -840,7 +671,6 @@ class SGPR_RPChol(BaseGP):
             kernel_params: kernel parameters
             sigma: standard deviation of the gaussian noise
             loss_fn: loss function
-            center_kernel: whether to center in feature space
 
         Note:
             It is always required to specify the loss function
@@ -854,7 +684,6 @@ class SGPR_RPChol(BaseGP):
             mean_function=mean_function,
             kernel_params=kernel_params,
             sigma=sigma,
-            center_kernel=center_kernel,
             loss_fn=loss_fn,
         )
 
