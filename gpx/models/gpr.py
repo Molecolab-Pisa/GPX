@@ -333,7 +333,7 @@ def fit_derivs(
     Returns:
         state: fitted model state
     """
-    fit_func = _fit_derivs_dense if iterative else _fit_derivs_iter
+    fit_func = _fit_derivs_iter if iterative else _fit_derivs_dense
     c, mu = fit_func(
         params=state.params,
         x=x,
