@@ -61,6 +61,13 @@ def log_marginal_likelihood(
         state: model state
         x: observations
         y: labels
+        iterative: whether to compute the lml iteratively
+                   (e.g., never instantiating the kernel)
+        num_evals: number of monte carlo evaluations for estimating
+                   log|K| (used only if iterative=True)
+        num_lanczos: number of Lanczos evaluations for estimating
+                     log|K| (used only if iterative=True)
+        lanczos_key: random key for Lanczos tridiagonalization
     Returns:
         lml: log marginal likelihood
     """
@@ -97,13 +104,20 @@ def log_marginal_likelihood_derivs(
     """computes the log marginal likelihood for standard gaussian process
     using the Hessian kernel
 
-        lml = - ½ y^T (∂∂K_nn + σ²I)⁻¹ y - ½ log |∂∂K_nn + σ²I| - ½ n log(2π)
+        lml = - ½ y^T (∂₁∂₂K_nn + σ²I)⁻¹ y - ½ log |∂₁∂₂K_nn + σ²I| - ½ n log(2π)
 
     Args:
         state: model state
         x: observations
         y: labels
         jacobian: jacobian of x
+        iterative: whether to compute the lml iteratively
+                   (e.g., never instantiating the kernel)
+        num_evals: number of monte carlo evaluations for estimating
+                   log|K| (used only if iterative=True)
+        num_lanczos: number of Lanczos evaluations for estimating
+                     log|K| (used only if iterative=True)
+        lanczos_key: random key for Lanczos tridiagonalization
     Returns:
         lml: log marginal likelihood
     """
@@ -298,6 +312,8 @@ def fit(
         state: model state
         x: observations
         y: labels
+        iterative: whether to fit iteratively
+                   (e.g., never instantiating the kernel)
     Returns:
         state: fitted model state
     """
@@ -323,13 +339,15 @@ def fit_derivs(
     """fits a standard gaussian process
 
         μ = 0.
-        c = (∂∂K_nn + σ²I)⁻¹y
+        c = (∂₁∂₂K_nn + σ²I)⁻¹y
 
     Args:
         state: model state
         x: observations
         y: labels
         jacobian: jacobian of x
+        iterative: whether to fit iteratively
+                   (e.g., never instantiating the kernel)
     Returns:
         state: fitted model state
     """
@@ -374,6 +392,8 @@ def predict(
         x_train: train observations
         x: observations
         full_covariance: whether to return the covariance matrix too
+        iterative: whether to fit iteratively
+                   (e.g., never instantiating the kernel)
     Returns:
         μ: predicted mean
         C_nn: predicted covariance
@@ -418,11 +438,15 @@ def predict_derivs(
         μ = K_nm (K_mm + σ²)⁻¹y
         C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
 
+    where K = ∂₁∂₂K
+
     Args:
         state: model state
         x: observations
         jacobian: jacobian of x
         full_covariance: whether to return the covariance matrix too
+        iterative: whether to fit iteratively
+                   (e.g., never instantiating the kernel)
     Returns:
         μ: predicted mean
         C_nn: predicted covariance

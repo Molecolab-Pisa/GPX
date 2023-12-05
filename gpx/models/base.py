@@ -152,6 +152,8 @@ class BaseGP:
         Args:
             x: observations
             full_covariance: whether to return the covariance matrix too
+            iterative: whether to predict iteratively
+                       (i.e., the kernel is never instantiated)
         Returns:
             μ: predicted mean
             C_nn: predicted covariance
@@ -174,6 +176,8 @@ class BaseGP:
             x: observations
             jacobian: jacobian of x
             full_covariance: whether to return the covariance matrix too
+            iterative: whether to predict iteratively
+                       (i.e., the kernel is never instantiated)
         Returns:
             μ: predicted mean
             C_nn: predicted covariance
@@ -203,6 +207,13 @@ class BaseGP:
             x: observations
             y: labels
             return_negative: whether to return the negative of the lml
+            iterative: whether to compute the lml iteratively
+                       (e.g., never instantiating the kernel)
+            num_evals: number of monte carlo evaluations for estimating
+                       log|K| (used only if iterative=True)
+            num_lanczos: number of Lanczos evaluations for estimating
+                         log|K| (used only if iterative=True)
+            lanczos_key: random key for Lanczos tridiagonalization
         """
         lml = self._lml_fun(
             self.state,
@@ -236,6 +247,13 @@ class BaseGP:
             y: labels
             jacobian: jacobian of x
             return_negative: whether to return the negative of the lml
+            iterative: whether to compute the lml iteratively
+                       (e.g., never instantiating the kernel)
+            num_evals: number of monte carlo evaluations for estimating
+                       log|K| (used only if iterative=True)
+            num_lanczos: number of Lanczos evaluations for estimating
+                         log|K| (used only if iterative=True)
+            lanczos_key: random key for Lanczos tridiagonalization
         """
         lml = self._lml_derivs_fun(
             self.state,
@@ -287,6 +305,17 @@ class BaseGP:
             minimize: whether to tune the parameters to optimize the loss
             num_restarts: number of restarts with randomization to do.
                           If 0, the model is fitted once without any randomization.
+            key: random key used to randomize the model when doing restarts
+            return_history: whether to return all the losses and model states
+                            obtained from the random restarts.
+            iterative: whether to fit the model iteratively
+                       WARNING: this refers *only* to the fit of linear
+                       coefficients. If the loss instantiates the full kernel,
+                       this keyword cannot avoid that. If you train using
+                       the lml provided by GPX, run with `iterable=True` in
+                       the loss_kwargs, along with the other options for Lanczos.
+            loss_kwargs: additional keyword arguments passed to the loss
+                         function.
 
         Notes:
 
@@ -362,6 +391,17 @@ class BaseGP:
                           log marginal likelihood
             num_restarts: number of restarts with randomization to do.
                           If 0, the model is fitted once without any randomization.
+            key: random key used to randomize the model when doing restarts
+            return_history: whether to return all the losses and model states
+                            obtained from the random restarts.
+            iterative: whether to fit the model iteratively
+                       WARNING: this refers *only* to the fit of linear
+                       coefficients. If the loss instantiates the full kernel,
+                       this keyword cannot avoid that. If you train using
+                       the lml provided by GPX, run with `iterable=True` in
+                       the loss_kwargs, along with the other options for Lanczos.
+            loss_kwargs: additional keyword arguments passed to the loss
+                         function.
 
         Notes:
 

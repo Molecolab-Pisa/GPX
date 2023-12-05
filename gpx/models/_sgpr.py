@@ -24,6 +24,15 @@ ParameterDict = Dict[str, Parameter]
 def _A_lhs(
     x1: ArrayLike, x2: ArrayLike, params: ParameterDict, kernel: Kernel
 ) -> Tuple[Array, Array]:
+    """lhs and rhs of A∙x = b' = b∙y
+
+    Builds the left hand side (lhs) and right hand side (rhs)
+    of A∙x = b' = b∙y for SGPR.
+    Dense implementation: A is built all at once.
+
+        lhs = σ² K_mm + K_mn K_nm
+        rhs = K_mn
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -44,6 +53,17 @@ def _A_derivs_lhs(
     params: ParameterDict,
     kernel: Kernel,
 ) -> Tuple[Array, Array]:
+    """lhs and rhs of A∙x = b' = b∙y
+
+    Builds the left hand side (lhs) and right hand side (rhs)
+    of A∙x = b' = b∙y for SGPR.
+    Dense implementation: A is built all at once.
+
+        lhs = σ² K_mm + K_mn K_nm
+        rhs = K_mn
+
+    Where K = ∂₁∂₂K
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -59,6 +79,15 @@ def _A_derivs_lhs(
 def _Ax_lhs_fun(
     x1: ArrayLike, x2: ArrayLike, params: ParameterDict, kernel: Kernel
 ) -> Tuple[Callable[ArrayLike, Array], Callable[ArrayLike, Array]]:
+    """lhs and rhs of A∙x = b' = b∙y
+
+    Builds the left hand side (lhs) and right hand side (rhs)
+    of A∙x = b' = b∙y for SGPR.
+    Iterative implementation.
+
+        lhs = σ² K_mm + K_mn K_nm
+        rhs = K_mn
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -104,6 +133,17 @@ def _Ax_derivs_lhs_fun(
     params: ParameterDict,
     kernel: Kernel,
 ) -> Tuple[Callable[ArrayLike, Array], Callable[ArrayLike, Array]]:
+    """lhs and rhs of A∙x = b' = b∙y
+
+    Builds the left hand side (lhs) and right hand side (rhs)
+    of A∙x = b' = b∙y for SGPR.
+    Iterative implementation.
+
+        lhs = σ² K_mm + K_mn K_nm
+        rhs = K_mn
+
+    where K = ∂₁∂₂K
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -147,6 +187,11 @@ def _Ax_derivs_lhs_fun(
 def _Hx_fun(
     x1: ArrayLike, x2: ArrayLike, params: ParameterDict, kernel: Kernel
 ) -> Callable[ArrayLike, Array]:
+    """builds H_nn = K_nm (K_mm)⁻¹ K_mn iteratively
+
+    Builds the function computing H_nn∙x without ever instantiating
+    H_nn. Only K_mm is instantiated fully and then inverted.
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -185,6 +230,12 @@ def _Hx_derivs_fun(
     params: ParameterDict,
     kernel: Kernel,
 ) -> Callable[ArrayLike, Array]:
+    """builds H_nn = K_nm (K_mm)⁻¹ K_mn iteratively
+
+    Builds the function computing H_nn∙x without ever instantiating
+    H_nn. Only K_mm is instantiated fully and then inverted.
+    Here K = ∂₁∂₂K.
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -234,6 +285,8 @@ def _fit_dense(
 ) -> Tuple[Array, Array]:
     """fits a SGPR (projected processes)
 
+    Dense implementation.
+
     μ = m(y)
     c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
     """
@@ -253,6 +306,13 @@ def _fit_iter(
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Tuple[Array, Array]:
+    """fits a SGPR (projected processes)
+
+    Iterative implementation.
+
+    μ = m(y)
+    c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    """
     mu = mean_function(y)
     y = y - mu
     matvec_lhs, matvec_rhs = _Ax_lhs_fun(x1=x_locs, x2=x, params=params, kernel=kernel)
@@ -272,6 +332,8 @@ def _fit_derivs_dense(
     mean_function: Callable,
 ) -> Tuple[Array, Array]:
     """fits a SGPR (projected processes)
+
+    Dense implementation. Here K = ∂₁∂₂K.
 
     μ = 0.
     c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
@@ -302,6 +364,13 @@ def _fit_derivs_iter(
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Tuple[Array, Array]:
+    """fits a SGPR (projected processes)
+
+    Iterative implementation. Here K = ∂₁∂₂K.
+
+    μ = 0.
+    c = (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    """
     y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu
@@ -372,6 +441,8 @@ def _predict_derivs_dense(
 
     μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
     C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+
+    Here K = ∂₁∂₂K
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
@@ -414,6 +485,11 @@ def _predict_iter(
     mu: ArrayLike,
     kernel: Kernel,
 ) -> Array:
+    """predicts with a SGPR (projected processes)
+
+    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+    """
     _, matvec = _Ax_lhs_fun(x1=x, x2=x_locs, params=params, kernel=kernel)
     mu = mu + matvec(c)
     return mu
@@ -430,6 +506,13 @@ def _predict_derivs_iter(
     mu: ArrayLike,
     kernel: Kernel,
 ) -> Array:
+    """predicts with a SGPR (projected processes)
+
+    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+
+    Here K = ∂₁∂₂K
+    """
     n, _, nd = jacobian.shape
     _, matvec = _Ax_derivs_lhs_fun(
         x1=x,
@@ -500,6 +583,13 @@ def _lml_iter(
     num_lanczos: int,
     lanczos_key: prng.PRNGKeyArray,
 ) -> Array:
+    """log marginal likelihood for SGPR (projected processes)
+
+    Iterative implementation.
+
+    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+    H = K_nm (K_mm)⁻¹ K_mn
+    """
     mu = mean_function(y)
     y = y - mu
     n = y.shape[0]
@@ -534,10 +624,12 @@ def _lml_derivs_dense(
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
-    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+    Dense implementation.
 
+    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
     H = K_nm (K_mm)⁻¹ K_mn
 
+    Here K = ∂₁∂₂K
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
@@ -580,6 +672,15 @@ def _lml_derivs_iter(
     num_lanczos: int,
     lanczos_key: prng.PRNGKeyArray,
 ) -> Array:
+    """log marginal likelihood for SGPR (projected processes)
+
+    Iterative implementation.
+
+    lml = - ½ y^T (H + σ²)⁻¹ y - ½ log|H + σ²| - ½ n log(2π)
+    H = K_nm (K_mm)⁻¹ K_mn
+
+    Here K = ∂₁∂₂K
+    """
     y = y.reshape(-1, 1)
     mu = mean_function(y)
     y = y - mu

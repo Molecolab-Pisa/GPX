@@ -32,7 +32,7 @@ def _A_lhs(
     Builds the left hand side (lhs) of A x = b for GPR.
     Dense implementation: A is built all at once.
 
-        A = K(x, x) + σ²I
+        A = K + σ²I
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
@@ -56,6 +56,13 @@ def _A_derivs_lhs(
     kernel: Kernel,
     noise: Optional[bool] = True,
 ) -> Array:
+    """lhs of A x = b
+
+    Builds the left hand side (lhs) of A x = b for GPR.
+    Dense implementation: A is built all at once.
+
+        A = ∂₁∂₂K + σ²I
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -78,9 +85,9 @@ def _Ax_lhs_fun(
 
     Builds a function that computes the matrix-vector
     product of the left hand side (lhs) of A x = b.
-    The matrix-vector product is computed iteratively.
+    Iterative implementation.
 
-        A = K(x, x) + σ²I
+        A = K + σ²I
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
@@ -109,9 +116,9 @@ def _Ax_derivs_lhs_fun(
     Builds a function that computes the matrix-vector
     product of the left hand side (lhs) of A x = b when
     training on derivative values only.
-    The matrix-vector product is computed iteratively.
+    Iterative implementation.
 
-        A = K(x, x) + σ²I
+        A = ∂₁∂₂K + σ²I
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
@@ -141,11 +148,11 @@ def _fit_dense(
 ) -> Tuple[Array, Array]:
     """fits a standard GPR with Cholesky
 
-    Fits a standard GPR using the Cholesky decomposition
-    to solve the linear system
+    Fits a standard GPR. The linear system is solved using the
+    Cholesky decomposition.
 
     μ = m(y)
-    c = (K(x, x) + σ²I)⁻¹y
+    c = (K + σ²I)⁻¹(y - μ)
     """
     mu = mean_function(y)
     y = y - mu
@@ -168,7 +175,7 @@ def _fit_iter(
     with Conjugated Gradient.
 
     μ = m(y)
-    c = (K(x, x) + σ²I)⁻¹y
+    c = (K + σ²I)⁻¹(y - μ)
     """
     mu = mean_function(y)
     y = y - mu
@@ -192,7 +199,7 @@ def _fit_derivs_dense(
     the linear system when training on derivative values.
 
     μ = m(y)
-    c = (K(x, x) + σ²I)⁻¹y
+    c = (∂₁∂₂K + σ²I)⁻¹(y - μ)
     """
     # also flatten y
     y = y.reshape(-1, 1)
@@ -226,7 +233,7 @@ def _fit_derivs_iter(
     Conjugate Gradient when training on derivative values.
 
     μ = m(y)
-    c = (K(x, x) + σ²I)⁻¹y
+    c = (∂₁∂₂K + σ²I)⁻¹(y - μ)
     """
     # flatten y
     y = y.reshape(-1, 1)
@@ -263,7 +270,7 @@ def _predict_dense(
     Predicts with GPR, by first building the full kernel matrix
     and then contracting with the linear coefficients.
 
-    μ = K_nm (K_mm + σ²)⁻¹y
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
     C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
     """
     K_mn = _A_lhs(x1=x_train, x2=x, params=params, kernel=kernel, noise=False)
@@ -294,6 +301,8 @@ def _predict_iter(
     Predicts with GPR without instantiating the full matrix.
     The contraction with the linear coefficients is performed
     iteratively.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
     """
     matvec = _Ax_lhs_fun(x1=x, x2=x_train, params=params, kernel=kernel, noise=False)
     mu = mu + matvec(c)
@@ -317,6 +326,11 @@ def _predict_derivs_dense(
     Predicts the derivative values with GPR.
     This is a dense implementation: the full kernel is instantiated
     before contracting twith the linear coefficients.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
+    C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+
+    where K = ∂₁∂₂K
     """
     K_mn = _A_derivs_lhs(
         x1=x_train,
@@ -375,6 +389,10 @@ def _predict_derivs_iter(
     Predicts the derivative values with GPR.
     The contraction with the linear coefficients is performed
     iteratively.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
+
+    where K = ∂₁∂₂K
     """
     matvec = _Ax_derivs_lhs_fun(
         x1=x,
@@ -408,6 +426,7 @@ def _lml_dense(
     Computes the log marginal likelihood for GPR.
     This is a dense implementation: the total kernel
     is built before obtaining the lml.
+
         lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
     """
     m = y.shape[0]
@@ -431,6 +450,15 @@ def _lml_dense(
 
 @partial(jit, static_argnums=(3, 4, 5, 6))
 def _lml_iter(params, x, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key):
+    """log marginal likelihood for GPR
+
+    Computes the log marginal likelihood for GPR.
+    Iterative implementation: the kernel is never instantiated, and
+    the log|K| is estimated via stochastic trace estimation and lanczos
+    quadrature.
+
+        lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
+    """
     m = y.shape[0]
     c, mu = _fit_iter(
         params=params, x=x, y=y, kernel=kernel, mean_function=mean_function
@@ -472,6 +500,8 @@ def _lml_derivs_dense(
     before obtaining the lml.
 
         lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
+
+    where K = ∂₁∂₂K
     """
     kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
     # flatten y
@@ -482,6 +512,17 @@ def _lml_derivs_dense(
 def _lml_derivs_iter(
     params, x, jacobian, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key
 ):
+    """log marginal likelihood for GPR
+
+    Computes the log marginal likelihood for GPR.
+    Iterative implementation: the kernel is never instantiated, and
+    the log|K| is estimated via stochastic trace estimation and lanczos
+    quadrature.
+
+        lml = - ½ y^T (K_nn + σ²I)⁻¹ y - ½ log |K_nn + σ²I| - ½ n log(2π)
+
+    where K = ∂₁∂₂K
+    """
     # flatten y
     y = y.reshape(-1, 1)
     m = y.shape[0]
