@@ -58,7 +58,7 @@ In order to cite GPX you can use the following bibtex entry:
 
 ```
 @software{gpx2023github,
-  author = {Edoardo Cignoni and Amanda Arcidiacono and Patrizia Mazzeo and Lorenzo Cupellini and Benedetta Mennucci},
+  author = {Edoardo Cignoni and Patrizia Mazzeo and Amanda Arcidiacono and Lorenzo Cupellini and Benedetta Mennucci},
   title = {GPX: Gaussian Process Regression in JAX},
   url = {https://github.com/Molecolab-Pisa/GPX},
   version = {0.1.0},
