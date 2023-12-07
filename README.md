@@ -4,123 +4,64 @@
 
 # GPX
 
-GPX is Gaussian Process Regression, written in JAX.
+GPX is [Gaussian Process Regression](https://gaussianprocess.org/gpml/chapters/RW.pdf), written in [JAX](https://github.com/google/jax).
+
+GPX currently supports:
+
+* [Standard GPR](https://gaussianprocess.org/gpml/chapters/RW.pdf#page=25)
+* Sparse GPR (SGPR) in the [Projected Processes Approximation](https://gaussianprocess.org/gpml/chapters/RW.pdf#page=196)
+* SGPR in the Projected Processes Approximation, with landmark selection using the [Randomly Pivoted Cholesky Decomposition](https://arxiv.org/abs/2207.06503)
+* [Radial Basis Function Networks](https://en.wikipedia.org/wiki/Radial_basis_function_network)
+* Training on target values or on [derivative values](https://gaussianprocess.org/gpml/chapters/RW.pdf#page=209) (using the Hessian kernel)
+* Kernels with automatic support for gradient and Hessian
+* Dense and sparse operations, the latter of which are important to [scale GP](https://proceedings.neurips.cc/paper_files/paper/2019/file/01ce84968c6969bdd5d51c5eeaa3946a-Paper.pdf) to large datasets.
+* [Iterative estimation](https://epubs.siam.org/doi/pdf/10.1137/16M1104974) of the log marginal likelihood with stochastic trace estimation and Lanczos quadrature.
+* Interface to [scipy](https://scipy.org/), [nlopt](https://nlopt.readthedocs.io/en/latest/), and [optax](https://github.com/google-deepmind/optax) optimizers
 
 
 ## Installation
 
 An environment with python 3.10 is recommended. You can create it with `conda`, `virtualenv`, or `pyenv`.
+Then simply clone the project and install it with `pip`.
 
-For example, with conda run the following code:
+For example, using conda:
 
 ```shell
 conda create -n gpx-env python=3.10
-```
-```shell
 conda activate gpx-env
-```
-
-#### JAX installation with GPU (CUDA) support
-
-You can skip this section if you only run JAX on the CPU.
-
-In order to install JAX with GPU support you must have CUDA and CuDNN installed. 
-CUDA 11 is required (available on gpumachine, molimen6, molimen7). 
-You can install CuDNN with:
-
-```shell
-conda install -c conda-forge cudnn=8.4
-```
-
-Then run:
-
-```shell
-pip install --upgrade pip
-```
-
-```shell
-pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-```
-
-For more information refer to [JAX installation on GPU (CUDA)](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu)
-
-#### GPX installation
-
-When installing GPX all the dependencies are included, however in case you have specific requirements for the JAX installation,
-you may want to install JAX separately, before installing GPX.
-For instance, if you want to run on GPU, see the previous section. 
-
-To clone the GPX module, run:
-
-```shell
-git clone git@molimen1.dcci.unipi.it:molecolab/gpx.git
-```
-
-This will create the `gpx` repository.
-
-From the `gpx` folder, you can install the module with pip:
-
-```shell
+git clone https://github.com/Molecolab-Pisa/GPX
+cd GPX
 pip install .
 ```
 
-#### Developer mode installation
+If you need to install JAX with GPU support, install JAX first following the [instructions provided by JAX](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu).
 
-It is recommended to fork this repository and clone the "forked" one as `origin`. The `upstream` version
-can be added by running the following code:
-
-```shell
-git remote add upstream git@molimen1.dcci.unipi.it:molecolab/gpx.git
-```
-
-More details on [configuring a remote repository for a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-repository-for-a-fork).
-
-You can install it locally with:
-
-```shell
-pip install -e .
-```
 
 ## Getting Started
 
-You may want to look at the examples.
+You may want to look at our list of examples:
 
+* [GPR](./examples/gpr.ipynb)
+* [SGPR](./examples/sgpr.ipynb)
+* [SGPR with RPCholesky](./examples/sgpr_with_rpcholesky.ipynb)
+* [GPR with derivatives](./examples/gpr_with_derivatives_only.ipynb)
+* [Simple Multioutput GP](./examples/multioutput.ipynb)
+* [Interface to NLOpt](./examples/nlopt_optimizers.ipynb)
+* [Kernelizers](./examples/kernelizers.ipynb) and [Kernel Operations](./examples/kernel_operations.ipynb)
+* [Maximum a Posteriori estimate](./examples/map_estimate.ipynb)
+* [Model Persistence in GPX](./examples/model_persistence.ipynb)
+* [Kernel derivatives](./examples/derivatives_solak.ipynb)
 
-## Notes for Developers
+# Citing GPX
 
-We recommend making changes in a branch of your local version. 
-Make sure that your main branch is up to date with the upstream:
+In order to cite GPX you can use the following bibtex entry:
 
-```shell
-git pull upstream main
 ```
-
-If you feel your work is completed and want to merge it with the `main` branch of GPX, you can
-make a merge request and ask for a review of your work.
-
-If, when contributing with some feature, you want to write some unit test for it, we are all super
-happy. We use `pytest` to write our tests.
-
-To run all the tests you can use `tox` (`pip install tox` if you don't have it).
-
-```shell
-tox -e tests
-```
-
-It is recommended to run the tests before pushing your changes to the upstream repository.
-
-We also use some pre-commit hooks, to format the code (with `black` and `isort`) and to immediately
-catch plain errors and bad practices (with `flake8`). To install the `pre-commit` hooks, follow
-the instructions in the `.pre-commit-config.yaml` file.
-
-You can check for code quality with tox, typing:
-
-```shell
-tox -e lint
-```
-
-If you want to manually format the code using `black` and `isort`, you can also type:
-
-```shell
-tox -e format
+@software{gpx2023github,
+  author = {Edoardo Cignoni and Amanda Arcidiacono and Patrizia Mazzeo and Lorenzo Cupellini and Benedetta Mennucci},
+  title = {GPX: Gaussian Process Regression in JAX},
+  url = {https://github.com/Molecolab-Pisa/GPX},
+  version = {0.1.0},
+  year = {2023},
+}
 ```
