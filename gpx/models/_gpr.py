@@ -503,10 +503,25 @@ def _lml_derivs_dense(
 
     where K = ∂₁∂₂K
     """
-    kernel = partial(kernel.d01kj, jacobian1=jacobian, jacobian2=jacobian)
     # flatten y
     y = y.reshape(-1, 1)
-    return _lml_dense(params, x, y, kernel, mean_function)
+    m = y.shape[0]
+    mu = mean_function(y)
+    y = y - mu
+
+    C_mm = _A_derivs_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
+
+    L_m = jsp.linalg.cholesky(C_mm, lower=True)
+    cy = jsp.linalg.solve_triangular(L_m, y, lower=True)
+
+    mll = -0.5 * jnp.sum(jnp.square(cy))
+    mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
+    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
+
+    # normalize by the number of samples
+    mll = mll / m
+
+    return mll
 
 
 def _lml_derivs_iter(
