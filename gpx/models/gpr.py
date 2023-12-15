@@ -9,6 +9,7 @@ from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..bijectors import Softplus
+from ..defaults import gpxargs
 from ..mean_functions import data_mean, zero_mean
 from ..parameters import ModelState
 from ..parameters.parameter import Parameter, is_parameter
@@ -49,9 +50,9 @@ def log_marginal_likelihood(
     x: ArrayLike,
     y: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """computes the log marginal likelihood for standard gaussian process
 
@@ -97,9 +98,9 @@ def log_marginal_likelihood_derivs(
     y: ArrayLike,
     jacobian: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """computes the log marginal likelihood for standard gaussian process
     using the Hessian kernel
@@ -158,9 +159,9 @@ def log_posterior(
     x: ArrayLike,
     y: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """Computes the log posterior
 
@@ -186,9 +187,9 @@ def log_posterior_derivs(
     y: ArrayLike,
     jacobian: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """Computes the log posterior
 
@@ -214,9 +215,9 @@ def neg_log_marginal_likelihood(
     x: ArrayLike,
     y: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood(
@@ -236,9 +237,9 @@ def neg_log_marginal_likelihood_derivs(
     y: ArrayLike,
     jacobian: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood_derivs(
@@ -258,9 +259,9 @@ def neg_log_posterior(
     x: ArrayLike,
     y: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior(
@@ -280,9 +281,9 @@ def neg_log_posterior_derivs(
     y: ArrayLike,
     jacobian: ArrayLike,
     iterative: Optional[bool] = False,
-    num_evals: Optional[int] = None,
-    num_lanczos: Optional[int] = None,
-    lanczos_key: Optional[prng.PRNGKeyArray] = None,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior_derivs(

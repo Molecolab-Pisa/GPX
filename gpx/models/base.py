@@ -8,6 +8,7 @@ from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
+from ..defaults import gpxargs
 from ..optimizers import NLoptWrapper, scipy_minimize, scipy_minimize_derivs
 from ..parameters import ModelState, Parameter
 from .utils import (
@@ -196,10 +197,10 @@ class BaseGP:
         x: ArrayLike,
         y: ArrayLike,
         return_negative: Optional[bool] = False,
-        iterative=False,
-        num_evals=None,
-        num_lanczos=None,
-        lanczos_key=None,
+        iterative: Optional[bool] = False,
+        num_evals: Optional[int] = gpxargs.num_evals,
+        num_lanczos: Optional[int] = gpxargs.num_lanczos,
+        lanczos_key: Optional[ArrayLike] = gpxargs.lanczos_key,
     ) -> Array:
         """Computes the log marginal likelihood.
 
@@ -235,10 +236,10 @@ class BaseGP:
         y: ArrayLike,
         jacobian: ArrayLike,
         return_negative: Optional[bool] = False,
-        iterative=False,
-        num_evals=None,
-        num_lanczos=None,
-        lanczos_key=None,
+        iterative: Optional[bool] = False,
+        num_evals: Optional[int] = gpxargs.num_evals,
+        num_lanczos: Optional[int] = gpxargs.num_lanczos,
+        lanczos_key: Optional[ArrayLike] = gpxargs.lanczos_key,
     ) -> Array:
         """Computes the log marginal likelihood using the hessian kernel.
 
@@ -287,10 +288,10 @@ class BaseGP:
         y: ArrayLike,
         minimize: Optional[bool] = True,
         num_restarts: Optional[int] = 0,
-        key: prng.PRNGKeyArray = None,
+        key: Optional[ArrayLike] = None,
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
-        loss_kwargs=None,
+        loss_kwargs: Optional[Dict] = None,
     ) -> Self:
         """fits the model
 
@@ -329,6 +330,11 @@ class BaseGP:
             In order to optimize with randomized restarts you need to provide a valid
             JAX PRNGKey.
         """
+        # we tell the loss that it should be iterative
+        # note that this overrides an eventual 'iterative' keyword
+        if loss_kwargs is None:
+            loss_kwargs = {}
+        loss_kwargs["iterative"] = iterative
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
 
         if minimize:
@@ -369,10 +375,10 @@ class BaseGP:
         jacobian: ArrayLike,
         minimize: Optional[bool] = True,
         num_restarts: Optional[int] = 0,
-        key: prng.PRNGKeyArray = None,
+        key: Optional[ArrayLike] = None,
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
-        loss_kwargs=None,
+        loss_kwargs: Optional[Dict] = None,
     ) -> Self:
         """fits the model
 
@@ -415,6 +421,10 @@ class BaseGP:
             In order to optimize with randomized restarts you need to provide a valid
             JAX PRNGKey.
         """
+        # we tell the loss that it should be iterative
+        if loss_kwargs is None:
+            loss_kwargs = {}
+        loss_kwargs["iterative"] = iterative
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
 
         if minimize:
@@ -460,13 +470,17 @@ class BaseGP:
         x: ArrayLike,
         y: ArrayLike,
         opt: NLoptWrapper,
-        minimize=True,
-        key=None,
-        num_restarts=0,
-        return_history=False,
+        minimize: Optional[bool] = True,
+        key: Optional[ArrayLike] = None,
+        num_restarts: Optional[int] = 0,
+        return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
-        loss_kwargs=None,
+        loss_kwargs: Optional[Dict] = None,
     ) -> Self:
+        # we tell the loss that it should be iterative
+        if loss_kwargs is None:
+            loss_kwargs = {}
+        loss_kwargs["iterative"] = iterative
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
 
         if minimize:
