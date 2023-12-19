@@ -509,7 +509,15 @@ def _lml_derivs_dense(
     mu = mean_function(y)
     y = y - mu
 
-    C_mm = _A_derivs_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
+    C_mm = _A_derivs_lhs(
+        x1=x,
+        x2=x,
+        jacobian1=jacobian,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        noise=True,
+    )
 
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
     cy = jsp.linalg.solve_triangular(L_m, y, lower=True)
