@@ -292,6 +292,7 @@ class BaseGP:
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
         loss_kwargs: Optional[Dict] = None,
+        opt_kwargs: Optional[Dict] = None,
     ) -> Self:
         """fits the model
 
@@ -348,6 +349,7 @@ class BaseGP:
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
+                opt_kwargs=opt_kwargs,
             )
             self.optimize_results_ = optres
 
@@ -379,6 +381,7 @@ class BaseGP:
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
         loss_kwargs: Optional[Dict] = None,
+        opt_kwargs: Optional[Dict] = None,
     ) -> Self:
         """fits the model
 
@@ -439,6 +442,7 @@ class BaseGP:
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
+                opt_kwargs=opt_kwargs,
             )
             self.optimize_results_ = optres
 
@@ -476,6 +480,7 @@ class BaseGP:
         return_history: Optional[bool] = False,
         iterative: Optional[bool] = False,
         loss_kwargs: Optional[Dict] = None,
+        opt_kwargs: Optional[Dict] = None,
     ) -> Self:
         # we tell the loss that it should be iterative
         if loss_kwargs is None:
@@ -494,6 +499,7 @@ class BaseGP:
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
+                opt_kwargs=opt_kwargs,
             )
             self.optimize_results_ = optres
 
