@@ -111,55 +111,59 @@ def scipy_minimize_derivs(
 # Callbacks
 # ============================================================================
 
-# we use a dictionary storing a separate counter for each optimization
-# (we don't want the counter to be overridden)
-_STATE_CHECKPOINT_COUNTER = {}
 
+class StateCheckpointer:
+    """state checkpointer callback
 
-def state_checkpointer(
-    state: ModelState, chk_file: Optional[str] = "optim_chk.npz"
-) -> Callable[ArrayLike]:
-    """state checkpointer callable
-
-    Generates a function that can be passed as `callback` to scipy_minimize.
-    This callable reconstructs the ModelState and saves it to a .npz file.
-    You can then load back the model parameters into a model with `model.load`.
-
-    Args:
-        state: model state.
-        chk_file: name of the checkpoint file. Note that a checkpoint will be
-                  saved for each step of scipy_minimize with a different postfix.
-                  E.g., if chk_file='test.npz', you will obtain 'test.000.npz'
-                  and so on.
-    Returns:
-        callback: function that can be passed as `callback` argument to
-                  scipy_minimize
+    This class can be passed as a 'callback' to scipy_minimize.
+    When called, it reconstructs the ModelState and saves it to a .npz file.
+    You can then load back the model parameters into a model with `model.load`
+    to check the model along the optimization.
+    You can also use the saved model to perform a restart if something goes
+    wrong during a long optimization.
     """
-    # use the hash code of state as key for the checkpoint counter
-    # WARNING: if you start from the exact same state you override
-    #          the counter
 
-    global _STATE_CHECKPOINT_COUNTER
+    def __init__(
+        self, state: ModelState, chk_file: Optional[str] = "optim_chk.npz"
+    ) -> None:
+        """
+        Args:
+            state: model state.
+            chk_file: name of the checkpoint file. Note that a checkpoint will
+                      be saved for each step of scipy_minimize with a
+                      different postfix.
+                      E.g., if chk_file='test.npz', you will obtain
 
-    # create counter
-    hash_code = hash(state)
-    _STATE_CHECKPOINT_COUNTER[hash_code] = 0
+                       - 'test.000.npz'
+                       - 'test.001.npz'
+                       - ...
 
-    # get the fmt string in order to save the state with a counter
-    name, ext = os.path.splitext(chk_file)
-    chk_file = name + ".{:03d}" + ext
-
-    def callback(x):
-        global _STATE_CHECKPOINT_COUNTER
-        counter = _STATE_CHECKPOINT_COUNTER[hash_code]
-
+                      and so on.
+        """
+        # store the state
+        self.state = state
+        # counter for how many times the callback is called
+        self.counter = 0
+        # create the formatted path for saving
+        self.fmt_chk_file = chk_file
+        # get the tree definition and the function to unravel the arrays
         _, tdef, unravel_fn = ravel_backward_trainables(state.params)
-        unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
-        params = unravel_forward(x)
-        ustate = state.update(dict(params=params))
-        ustate.save(chk_file.format(counter))
+        # get the function to reconstruct the parameters from x
+        self.unravel_forward = unravel_forward_trainables(
+            unravel_fn, tdef, state.params
+        )
 
-        # update counter
-        _STATE_CHECKPOINT_COUNTER[hash_code] += 1
+    @property
+    def fmt_chk_file(self):
+        return self._fmt_chk_file
 
-    return callback
+    @fmt_chk_file.setter
+    def fmt_chk_file(self, value: str) -> None:
+        name, ext = os.path.splitext(value)
+        self._fmt_chk_file = name + ".{:03d}" + ext
+
+    def __call__(self, x: ArrayLike) -> None:
+        params = self.unravel_forward(x)
+        ustate = self.state.update(dict(params=params))
+        ustate.save(self.fmt_chk_file.format(self.counter))
+        self.counter += 1
