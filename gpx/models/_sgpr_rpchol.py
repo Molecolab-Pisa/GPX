@@ -4,7 +4,6 @@ from functools import partial
 from typing import Callable, Dict, Optional, Tuple
 
 from jax import Array, jit
-from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..kernels.approximations import rpcholesky
@@ -13,6 +12,7 @@ from ..parameters import Parameter
 from . import _sgpr
 
 ParameterDict = Dict[str, Parameter]
+KeyArray = Array
 
 
 # functions to fit a SGPR
@@ -23,7 +23,7 @@ def _fit_dense(
     params: Dict[str, Parameter],
     x: ArrayLike,
     y: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Callable,
     mean_function: Callable,
@@ -57,7 +57,7 @@ def _fit_iter(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
@@ -87,7 +87,7 @@ def _fit_derivs_dense(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Callable,
     mean_function: Callable,
@@ -125,7 +125,7 @@ def _fit_derivs_iter(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Callable,
     mean_function: Callable,
@@ -165,7 +165,7 @@ def _lml_dense(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Callable,
     mean_function: Callable,
@@ -198,13 +198,13 @@ def _lml_iter(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: int,
     kernel: Callable,
     mean_function: Callable,
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: prng.PRNGKeyArray,
+    lanczos_key: KeyArray,
 ):
     # note: this is a dense operation, and as is
     #       is not sufficient to iteratively evaluate
@@ -236,7 +236,7 @@ def _lml_derivs_dense(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: ArrayLike,
     kernel: Callable,
     mean_function: Callable,
@@ -373,13 +373,13 @@ def _lml_derivs_iter(
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     n_locs: ArrayLike,
     kernel: Callable,
     mean_function: Callable,
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: prng.PRNGKeyArray,
+    lanczos_key: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 

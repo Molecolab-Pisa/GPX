@@ -5,7 +5,6 @@ from typing import Any, Callable, Dict, Optional
 
 import jax.numpy as jnp
 from jax import Array, jit, random
-from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
@@ -22,6 +21,7 @@ from .utils import (
     randomized_minimization,
 )
 
+KeyArray = Array
 # optax optimizer
 GradientTransformation = Any
 
@@ -133,7 +133,7 @@ def predict(state: ModelState, x: ArrayLike, linear_only: bool = False) -> Array
 
 
 def default_params(
-    key: prng.PRNGKeyArray, num_input: int, num_output: int
+    key: KeyArray, num_input: int, num_output: int
 ) -> Dict[str, Parameter]:
     # regularization strength
     alpha = Parameter(
@@ -155,7 +155,7 @@ def default_params(
 
 
 def init(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     kernel: Callable,
     inducing_points: Parameter,
     num_output: int,
@@ -218,7 +218,7 @@ class RBFNet:
 
     def __init__(
         self,
-        key: prng.PRNGKeyArray,
+        key: KeyArray,
         kernel: Callable,
         inducing_points: Parameter,
         num_output: int,
@@ -280,7 +280,7 @@ class RBFNet:
 
     def init(
         self,
-        key: prng.PRNGKeyArray,
+        key: KeyArray,
         kernel: Callable,
         inducing_points: Parameter,
         num_output: int,
@@ -304,7 +304,7 @@ class RBFNet:
         )
 
     def default_params(
-        self, key: prng.PRNGKeyArray, num_input: int, num_output: int
+        self, key: KeyArray, num_input: int, num_output: int
     ) -> Dict[str, Parameter]:
         "default model parameters"
         return default_params(key=key, num_input=num_input, num_output=num_output)
@@ -318,7 +318,7 @@ class RBFNet:
         x: ArrayLike,
         y: ArrayLike,
         num_restarts: Optional[int] = 0,
-        key: prng.PRNGKeyArray = None,
+        key: KeyArray = None,
         return_history: Optional[bool] = False,
     ) -> Self:
         minimization_function = scipy_minimize
@@ -349,7 +349,7 @@ class RBFNet:
         y: ArrayLike,
         opt: NLoptWrapper,
         num_restarts: Optional[int] = 0,
-        key: Optional[prng.PRNGKeyArray] = None,
+        key: Optional[KeyArray] = None,
         return_history: Optional[bool] = False,
     ) -> Self:
         minimization_function = opt.optimize
@@ -384,7 +384,7 @@ class RBFNet:
         learning_rate: float = 1.0,
         update_every: int = 1,
         num_restarts: int = 0,
-        key: prng.PRNGKeyArray = None,
+        key: KeyArray = None,
         return_history: int = False,
     ) -> Self:
         minimization_function = optax_minimize
@@ -432,7 +432,7 @@ class RBFNet:
         self.state = self.state.load(state_file)
         return self
 
-    def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True) -> Self:
+    def randomize(self, key: KeyArray, reset: Optional[bool] = True) -> Self:
         """Creates a new model state with randomized parameter values"""
         if reset:
             new_state = self.state.randomize(key, opt=self._init_default)

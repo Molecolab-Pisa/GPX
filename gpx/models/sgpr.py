@@ -5,7 +5,6 @@ from typing import Callable, Dict, Optional
 import jax
 import jax.numpy as jnp
 from jax import Array
-from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..bijectors import Softplus
@@ -36,6 +35,8 @@ from .utils import (
     sample,
 )
 
+KeyArray = Array
+
 # =============================================================================
 # Sparse Gaussian Process Regression: functions
 # =============================================================================
@@ -48,7 +49,7 @@ def log_marginal_likelihood(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -93,7 +94,7 @@ def log_marginal_likelihood_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -152,7 +153,7 @@ def log_posterior(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """Computes the log posterior
 
@@ -179,7 +180,7 @@ def log_posterior_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     """Computes the log posterior
 
@@ -207,7 +208,7 @@ def neg_log_marginal_likelihood(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood(
@@ -229,7 +230,7 @@ def neg_log_marginal_likelihood_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood_derivs(
@@ -251,7 +252,7 @@ def neg_log_posterior(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior(
@@ -273,7 +274,7 @@ def neg_log_posterior_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[prng.PRNGKeyArray] = gpxargs.lanczos_key,
+    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior_derivs(
@@ -465,7 +466,7 @@ def predict_derivs(
 
 
 def sample_prior(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     n_samples: Optional[int] = 1,
@@ -493,7 +494,7 @@ def sample_prior(
 
 
 def sample_prior_derivs(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     jacobian: ArrayLike,
@@ -523,7 +524,7 @@ def sample_prior_derivs(
 
 
 def sample_posterior(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     n_samples: Optional[int] = 1,
@@ -549,7 +550,7 @@ def sample_posterior(
 
 
 def sample_posterior_derivs(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     jacobian: ArrayLike,

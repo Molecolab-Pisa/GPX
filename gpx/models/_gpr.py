@@ -15,6 +15,7 @@ from ..parameters import Parameter
 
 ParameterDict = Dict[str, Parameter]
 Kernel = Any
+KeyArray = Array
 
 # Functions to compute the kernel matrices needed for GPR
 
@@ -457,7 +458,7 @@ def _lml_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: Array,
+    lanczos_key: KeyArray,
 ):
     """log marginal likelihood for GPR
 
@@ -551,7 +552,7 @@ def _lml_derivs_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: Array,
+    lanczos_key: KeyArray,
 ) -> Array:
     """log marginal likelihood for GPR
 

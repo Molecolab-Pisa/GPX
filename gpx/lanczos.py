@@ -6,8 +6,9 @@ from typing import Callable, Tuple
 import jax
 import jax.numpy as jnp
 from jax import Array, jit, random
-from jax._src import prng
 from jax.typing import ArrayLike
+
+KeyArray = Array
 
 
 def orthogonalize(v: ArrayLike, vecs: ArrayLike) -> Array:
@@ -29,7 +30,7 @@ def orthonormalize(v: ArrayLike, vecs: ArrayLike) -> Array:
 
 @partial(jit, static_argnums=(0, 1))
 def lanczos_tridiagonal(
-    matvec: Callable[ArrayLike, Array], m: int, v1: ArrayLike, key: prng.PRNGKeyArray
+    matvec: Callable[ArrayLike, Array], m: int, v1: ArrayLike, key: KeyArray
 ) -> Tuple[Array, Array]:
     """lanczos tridiagonalization
 
@@ -123,7 +124,7 @@ def lanczos_logdet(
     num_evals: int,
     dim_mat: int,
     num_lanczos: int,
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
 ) -> Array:
     """approximate log(det(A)) = tr(log(A)) with stochastic trace estimation
 

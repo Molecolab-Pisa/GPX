@@ -7,7 +7,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from jax._src import prng
 from jax.tree_util import (
     tree_flatten,
     tree_leaves,
@@ -19,6 +18,8 @@ from tabulate import tabulate
 
 from .parameter import Parameter, is_parameter
 from .utils import _flatten_dict, _is_numeric, _unflatten_dict
+
+KeyArray = Array
 
 
 @jax.tree_util.register_pytree_node_class
@@ -326,9 +327,7 @@ class ModelState:
 
         return self.update(update_dict)
 
-    def randomize(
-        self, key: prng.PRNGKeyArray, opt: Dict[str, Any] = None
-    ) -> "ModelState":
+    def randomize(self, key: KeyArray, opt: Dict[str, Any] = None) -> "ModelState":
         """Creates a new state with randomized parameter values
 
         Creates a copy of the current state and updates the copy so that the parameter

@@ -6,11 +6,12 @@ from typing import Any, Callable, Dict, Optional
 import jax
 import jax.numpy as jnp
 from jax import Array, random
-from jax._src import prng
 from jax.typing import ArrayLike
 
 from ..optimizers import scipy_minimize, scipy_minimize_derivs
 from ..parameters import ModelState
+
+KeyArray = Array
 
 
 def _check_object_is_callable(obj: Any, name: str) -> None:
@@ -37,7 +38,7 @@ def _check_recursive_dict_type(dictionary: Dict, ref_type: Any) -> None:
 
 
 def sample(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     mean: ArrayLike,
     cov: ArrayLike,
     n_samples: Optional[int] = 1,
@@ -71,7 +72,7 @@ def loss_fn_with_args(loss_fn, loss_kwargs):
 # ============================================================================
 
 
-def _check_random_key(key: prng.PRNGKeyArray, num_restarts: int):
+def _check_random_key(key: KeyArray, num_restarts: int):
     if num_restarts > 0 and key is None:
         raise ValueError(
             "If you want to train with randomized restarts, please provide"
@@ -80,7 +81,7 @@ def _check_random_key(key: prng.PRNGKeyArray, num_restarts: int):
 
 
 def randomized_minimization(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
@@ -152,7 +153,7 @@ def randomized_minimization(
 
 
 def randomized_minimization_derivs(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,

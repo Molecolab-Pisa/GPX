@@ -6,12 +6,12 @@ from typing import Any, Callable, Dict, Tuple
 import jax
 import jax.numpy as jnp
 from jax import Array
-from jax._src import prng
 from jax.typing import ArrayLike
 
 from .utils import _check_same_dtype, _check_same_shape
 
 Bijector = Any
+KeyArray = Array
 
 
 @jax.tree_util.register_pytree_node_class
@@ -86,7 +86,7 @@ class Parameter:
         "returns a shallow copy of the parameter"
         return copy.copy(self)
 
-    def sample_prior(self, key: prng.PRNGKeyArray) -> "Parameter":
+    def sample_prior(self, key: KeyArray) -> "Parameter":
         "returns a new parameter with value sampled from the prior"
         sample = self.prior.sample(key)
         # constrain the sampled value to the enforced range

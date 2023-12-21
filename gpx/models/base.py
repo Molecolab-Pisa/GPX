@@ -4,7 +4,6 @@ import warnings
 from typing import Dict, Optional
 
 from jax import Array
-from jax._src import prng
 from jax.typing import ArrayLike
 from typing_extensions import Self
 
@@ -16,6 +15,8 @@ from .utils import (
     randomized_minimization,
     randomized_minimization_derivs,
 )
+
+KeyArray = Array
 
 
 class BaseGP:
@@ -66,7 +67,7 @@ class BaseGP:
         "Default model parameters"
         return self._default_params_fun()
 
-    def randomize(self, key: prng.PRNGKeyArray, reset: Optional[bool] = True):
+    def randomize(self, key: KeyArray, reset: Optional[bool] = True):
         "Creates a new ModelState with randomized parameter values"
         if reset:
             new_state = self.state.randomize(key, opt=self._init_default)
@@ -76,7 +77,7 @@ class BaseGP:
 
     def sample(
         self,
-        key: prng.PRNGKeyArray,
+        key: KeyArray,
         x: ArrayLike,
         n_samples: Optional[int] = 1,
         kind: Optional[str] = "prior",
@@ -107,7 +108,7 @@ class BaseGP:
 
     def sample_derivs(
         self,
-        key: prng.PRNGKeyArray,
+        key: KeyArray,
         x: ArrayLike,
         jacobian: ArrayLike,
         n_samples: Optional[int] = 1,

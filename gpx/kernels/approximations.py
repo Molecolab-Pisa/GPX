@@ -6,15 +6,15 @@ from typing import Any, Callable, Dict, Tuple
 import jax
 import jax.numpy as jnp
 from jax import Array, jit, random
-from jax._src import prng
 from jax.typing import ArrayLike
 
 Parameter = Any
+KeyArray = Array
 
 
 @partial(jit, static_argnums=(2, 3))
 def rpcholesky(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     x: ArrayLike,
     n_pivots: int,
     kernel: Callable[ArrayLike, ArrayLike, Dict[str, Parameter]],

@@ -6,9 +6,10 @@ from typing import Any, Tuple
 
 import jax.numpy as jnp
 from jax import Array, random
-from jax._src import prng
 from jax.scipy.special import gammaln
 from jax.typing import ArrayLike
+
+KeyArray = Array
 
 # ============================================================================
 # Functions
@@ -21,7 +22,7 @@ from jax.typing import ArrayLike
 
 
 def normal_sample(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     loc: ArrayLike = 0.0,
     scale: ArrayLike = 1.0,
     shape: Tuple = (),
@@ -74,7 +75,7 @@ def normal_logpdf(
 
 
 def gamma_sample(
-    key: prng.PRNGKeyArray,
+    key: KeyArray,
     concentration: ArrayLike = 1.0,
     rate: ArrayLike = 1.0,
     shape: Tuple = (),
@@ -152,14 +153,14 @@ class Prior(ABC):
         "return a shallow copy of the prior"
 
     @abstractmethod
-    def sample(self, key: prng.PRNGKeyArray) -> Array:
+    def sample(self, key: KeyArray) -> Array:
         "sample from the prior"
 
     @abstractmethod
     def logpdf(self, x: ArrayLike) -> Array:
         "evaluate the log pdf"
 
-    def __call__(self, key: prng.PRNGKeyArray) -> Array:
+    def __call__(self, key: KeyArray) -> Array:
         return self.sample(key)
 
     def copy(self) -> "Prior":
@@ -213,7 +214,7 @@ class NormalPrior(Prior):
             loc=self.loc, scale=self.scale, shape=self.shape, dtype=self.dtype
         )
 
-    def sample(self, key: prng.PRNGKeyArray) -> Array:
+    def sample(self, key: KeyArray) -> Array:
         return normal_sample(
             key, loc=self.loc, scale=self.scale, shape=self.shape, dtype=self.dtype
         )
@@ -267,7 +268,7 @@ class GammaPrior(Prior):
             dtype=self.dtype,
         )
 
-    def sample(self, key: prng.PRNGKeyArray) -> Array:
+    def sample(self, key: KeyArray) -> Array:
         return gamma_sample(
             key,
             concentration=self.concentration,

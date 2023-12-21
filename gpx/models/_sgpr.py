@@ -7,7 +7,6 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import Array, jit
-from jax._src import prng
 from jax.scipy.sparse.linalg import cg
 from jax.typing import ArrayLike
 
@@ -17,6 +16,7 @@ from ..operations import rowfun_to_matvec
 from ..parameters import Parameter
 
 ParameterDict = Dict[str, Parameter]
+KeyArray = Array
 
 # Functions to compute the kernel matrices needed for SGPR
 
@@ -583,7 +583,7 @@ def _lml_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: prng.PRNGKeyArray,
+    lanczos_key: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -672,7 +672,7 @@ def _lml_derivs_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: prng.PRNGKeyArray,
+    lanczos_key: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
