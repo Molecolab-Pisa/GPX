@@ -4,7 +4,7 @@ import os
 from functools import partial
 from typing import Callable, Optional, Tuple
 
-from jax import grad, jit
+from jax import jit, value_and_grad
 from jax.typing import ArrayLike
 from scipy.optimize import minimize
 from scipy.optimize._optimize import OptimizeResult
@@ -54,16 +54,17 @@ def scipy_minimize(
     # function to unravel and unflatten trainables and go in bound space
     unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
 
-    @jit
     def loss(xt):
         # go in bound space and reconstruct params
         params = unravel_forward(xt)
         ustate = state.update(dict(params=params))
         return loss_fn(ustate, x, y)
 
-    grad_loss = jit(grad(loss))
+    loss_and_grad = jit(value_and_grad(loss))
 
-    optres = minimize(loss, x0=x0, method="L-BFGS-B", jac=grad_loss, callback=callback)
+    optres = minimize(
+        loss_and_grad, x0=x0, method="L-BFGS-B", jac=True, callback=callback
+    )
 
     params = unravel_forward(optres.x)
     state = state.update(dict(params=params))
