@@ -59,6 +59,7 @@ def train_with_constrained_parameters(loop_func: Callable) -> Callable:
         # train in the unbound space
         state = state.transform(mode="backward")
 
+        @jax.jit
         def _loss_fn(state, x, y):
             # bound parameters before calling the loss
             state = state.transform(mode="forward")

@@ -54,6 +54,7 @@ def scipy_minimize(
     # function to unravel and unflatten trainables and go in bound space
     unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
 
+    @jit
     def loss(xt):
         # go in bound space and reconstruct params
         params = unravel_forward(xt)

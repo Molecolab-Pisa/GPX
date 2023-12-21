@@ -108,6 +108,7 @@ class NLoptWrapper:
         x0, _, _ = self.ravel_backward(state.params)
 
         # setup the loss function
+        @jit
         def loss(xt):
             # go in bound space and reconstruct params
             params = self.unravel_forward(xt)

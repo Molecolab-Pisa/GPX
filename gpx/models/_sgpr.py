@@ -21,6 +21,7 @@ ParameterDict = Dict[str, Parameter]
 # Functions to compute the kernel matrices needed for SGPR
 
 
+@partial(jit, static_argnums=(3,))
 def _A_lhs(
     x1: ArrayLike, x2: ArrayLike, params: ParameterDict, kernel: Kernel
 ) -> Tuple[Array, Array]:
@@ -45,6 +46,7 @@ def _A_lhs(
     return C_mm, K_mn
 
 
+@partial(jit, static_argnums=(5,))
 def _A_derivs_lhs(
     x1: ArrayLike,
     jacobian1: ArrayLike,

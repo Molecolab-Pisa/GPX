@@ -449,7 +449,16 @@ def _lml_dense(
 
 
 @partial(jit, static_argnums=(3, 4, 5, 6))
-def _lml_iter(params, x, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key):
+def _lml_iter(
+    params: ParameterDict,
+    x: ArrayLike,
+    y: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+    num_evals: int,
+    num_lanczos: int,
+    lanczos_key: Array,
+):
     """log marginal likelihood for GPR
 
     Computes the log marginal likelihood for GPR.
@@ -532,9 +541,18 @@ def _lml_derivs_dense(
     return mll
 
 
+@partial(jit, static_argnums=(4, 5, 6, 7))
 def _lml_derivs_iter(
-    params, x, jacobian, y, kernel, mean_function, num_evals, num_lanczos, lanczos_key
-):
+    params: ParameterDict,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    y: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+    num_evals: int,
+    num_lanczos: int,
+    lanczos_key: Array,
+) -> Array:
     """log marginal likelihood for GPR
 
     Computes the log marginal likelihood for GPR.
