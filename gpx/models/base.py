@@ -193,6 +193,31 @@ class BaseGP:
             iterative=iterative,
         )
 
+    def predict_y_derivs(
+        self,
+        x: ArrayLike,
+        full_covariance: Optional[bool] = False,
+        iterative: Optional[bool] = False,
+    ) -> Array:
+        """Predicts the output derivatives on new data.
+
+        Args:
+            x: observations
+            full_covariance: whether to return the covariance matrix too
+            iterative: whether to predict iteratively
+                       (i.e., the kernel is never instantiated)
+        Returns:
+            μ: predicted mean
+            C_nn: predicted covariance
+        """
+        self._check_is_fitted()
+        return self._predict_y_derivs_fun(
+            self.state,
+            x=x,
+            full_covariance=full_covariance,
+            iterative=iterative,
+        )
+
     def log_marginal_likelihood(
         self,
         x: ArrayLike,
@@ -275,8 +300,11 @@ class BaseGP:
     def is_fitted(self):
         return hasattr(self.state, "c")
 
+    def is_fitted_derivs(self):
+        return hasattr(self.state, "c")
+
     def _check_is_fitted(self):
-        if not self.is_fitted():
+        if not self.is_fitted() and not self.is_fitted_derivs:
             class_name = self.__class__.__name__
             raise RuntimeError(
                 f"{class_name} is not fitted yet."

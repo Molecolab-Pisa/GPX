@@ -28,6 +28,8 @@ from ._gpr import (
     _predict_derivs_dense,
     _predict_derivs_iter,
     _predict_iter,
+    _predict_y_derivs_dense,
+    _predict_y_derivs_iter,
 )
 from .base import BaseGP
 from .utils import (
@@ -327,7 +329,9 @@ def fit(
         kernel=state.kernel,
         mean_function=state.mean_function,
     )
-    state = state.update(dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True))
+    state = state.update(
+        dict(x_train=x, y_train=y, c=c, mu=mu, is_fitted=True, is_fitted_derivs=False)
+    )
     return state
 
 
@@ -369,7 +373,8 @@ def fit_derivs(
             jacobian_train=jacobian,
             c=c,
             mu=mu,
-            is_fitted=True,
+            is_fitted=False,
+            is_fitted_derivs=True,
         )
     )
     return state
@@ -391,7 +396,6 @@ def predict(
 
     Args:
         state: model state
-        x_train: train observations
         x: observations
         full_covariance: whether to return the covariance matrix too
         iterative: whether to fit iteratively
@@ -403,6 +407,11 @@ def predict(
     if not state.is_fitted:
         raise RuntimeError(
             "Model is not fitted. Run `fit` to fit the model before prediction."
+        )
+    if state.is_fitted_derivs:
+        raise RuntimeError(
+            "Model is trained on derivatives. For the prediction,"
+            " run `predict_derivs` and `predict_y_derivs`"
         )
     if full_covariance and iterative:
         raise RuntimeError(
@@ -453,9 +462,13 @@ def predict_derivs(
         μ: predicted mean
         C_nn: predicted covariance
     """
-    if not state.is_fitted:
+    if not state.is_fitted_derivs:
         raise RuntimeError(
-            "Model is not fitted. Run `fit` to fit the model before prediction."
+            "Model is not fitted. Run `fit_derivs` to fit the model before prediction."
+        )
+    if state.is_fitted:
+        raise RuntimeError(
+            "Model is not trained on derivatives. Run `predict` to predict the target."
         )
     if full_covariance and iterative:
         raise RuntimeError(
@@ -480,6 +493,63 @@ def predict_derivs(
         jacobian=jacobian,
         c=state.c,
         mu=0.0,  # zero mean
+        kernel=state.kernel,
+        full_covariance=full_covariance,
+    )
+
+
+def predict_y_derivs(
+    state: ModelState,
+    x: ArrayLike,
+    full_covariance: Optional[bool] = False,
+    iterative: Optional[bool] = False,
+) -> Array:
+    """predicts with standard gaussian process
+       when the model is trained on derivatives
+
+        μ = K_nm (K_mm + σ²)⁻¹y
+        C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+
+    Args:
+        state: model state
+        x: observations
+        jacobian: jacobian of x
+        full_covariance: whether to return the covariance matrix too
+        iterative: whether to fit iteratively
+                   (e.g., never instantiating the kernel)
+    Returns:
+        μ: predicted mean
+        C_nn: predicted covariance
+    """
+    if not state.is_fitted_derivs:
+        raise RuntimeError(
+            "Model is not fitted. Run `fit_derivs` to fit the model before prediction."
+        )
+    if state.is_fitted:
+        raise RuntimeError(
+            "Model is not trained on derivatives. Run `predict` to predict the target."
+        )
+    if full_covariance and iterative:
+        raise RuntimeError(
+            "'full_covariance=True' is not compatible with 'iterative=True'"
+        )
+    if iterative:
+        return _predict_y_derivs_iter(
+            params=state.params,
+            x_train=state.x_train,
+            jacobian_train=state.jacobian_train,
+            x=x,
+            c=state.c,
+            mu=state.mu,
+            kernel=state.kernel,
+        )
+    return _predict_y_derivs_dense(
+        params=state.params,
+        x_train=state.x_train,
+        jacobian_train=state.jacobian_train,
+        x=x,
+        c=state.c,
+        mu=state.mu,
         kernel=state.kernel,
         full_covariance=full_covariance,
     )
@@ -579,7 +649,7 @@ def sample_posterior_derivs(
     Returns:
         samples: samples from the posterior distribution
     """
-    if not state.is_fitted:
+    if not state.is_fitted_derivs:
         raise RuntimeError(
             "Cannot sample from the posterior if the model is not fitted"
         )
@@ -637,6 +707,7 @@ def init(
         "y_train": None,
         "loss_fn": loss_fn,
         "is_fitted": False,
+        "is_fitted_derivs": False,
         "c": None,
         "mu": None,
     }
@@ -650,7 +721,7 @@ def init(
 
 
 class GPR(BaseGP):
-    _init_default = dict(is_fitted=False, c=None, mu=None)
+    _init_default = dict(is_fitted=False, is_fitted_derivs=False, c=None, mu=None)
 
     def __init__(
         self,
@@ -692,6 +763,7 @@ class GPR(BaseGP):
     # prediction policies
     _predict_fun = staticmethod(predict)
     _predict_derivs_fun = staticmethod(predict_derivs)
+    _predict_y_derivs_fun = staticmethod(predict_y_derivs)
     # sample policies
     _sample_prior_fun = staticmethod(sample_prior)
     _sample_posterior_fun = staticmethod(sample_posterior)

@@ -367,6 +367,50 @@ def _predict_derivs_iter(
     )
 
 
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_dense(
+    params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    return _sgpr._predict_y_derivs_dense(
+        params=params,
+        x_locs=x_locs,
+        jacobian_locs=jacobian_locs,
+        x=x,
+        c=c,
+        mu=mu,
+        kernel=kernel,
+    )
+
+
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_iter(
+    params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    return _sgpr._predict_y_derivs_iter(
+        params=params,
+        x_locs=x_locs,
+        jacobian_locs=jacobian_locs,
+        x=x,
+        c=c,
+        mu=mu,
+        kernel=kernel,
+    )
+
+
 @partial(jit, static_argnums=(5, 6, 7, 8, 9))
 def _lml_derivs_iter(
     params: Dict[str, Parameter],

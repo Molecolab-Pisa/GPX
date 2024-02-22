@@ -273,6 +273,31 @@ def _Hx_derivs_fun(
     return matvec
 
 
+def _Kx_derivs1_fun(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    jacobian2: ArrayLike,
+    params: ParameterDict,
+    kernel: Kernel,
+    noise: Optional[bool] = True,
+) -> Callable[ArrayLike, Array]:
+    """matrix-vector function for the first derivative of K
+
+    Builds a function that computes the matrix-vector
+    product ∂₂K x.
+    Iterative implementation.
+    """
+    kernel_params = params["kernel_params"]
+
+    def row_fun(x1s):
+        x1s = jnp.expand_dims(x1s, axis=0)
+        return kernel.d1kj(x1s, x2, kernel_params, jacobian2)
+
+    matvec = rowfun_to_matvec(row_fun, init_val=(x1))
+
+    return matvec
+
+
 # Functions to fit SGPR
 
 
@@ -526,6 +551,75 @@ def _predict_derivs_iter(
     )
     mu = mu + matvec(c)
     mu = mu.reshape(n, nd)
+    return mu
+
+
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_dense(
+    params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts targets with a SGPR (projected processes)
+    trained on derivatives.
+
+    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+    """
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+    m = x_locs.shape[0]
+
+    K_mn = kernel.d0kj(x_locs, x, kernel_params, jacobian_locs)
+
+    mu = mu + jnp.dot(K_mn.T, c)
+
+    if full_covariance:
+        C_mm = kernel.d01kj(x_locs, x_locs, kernel_params, jacobian_locs, jacobian_locs)
+
+        C_mm = C_mm + sigma**2 * jnp.eye(m)
+        L_m = jsp.linalg.cholesky(C_mm, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+
+        C_nn = kernel(x, x, kernel_params)
+
+        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
+        return mu, C_nn
+
+    return mu
+
+
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_iter(
+    params: Dict[str, Parameter],
+    x_locs: ArrayLike,
+    jacobian_locs: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts targets with a SGPR (projected processes)
+    trained on derivatives.
+
+    μ = K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn y
+    C_nn = K_nn - K_nm (K_mm)⁻¹ K_mn + σ² K_nm (σ² K_mm + K_mn K_nm)⁻¹ K_mn
+    """
+    matvec = _Kx_derivs1_fun(
+        x1=x,
+        x2=x_locs,
+        jacobian2=jacobian_locs,
+        params=params,
+        kernel=kernel,
+        noise=False,
+    )
+    mu = mu + matvec(c)
     return mu
 
 

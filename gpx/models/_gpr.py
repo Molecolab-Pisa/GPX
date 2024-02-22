@@ -136,6 +136,31 @@ def _Ax_derivs_lhs_fun(
     return matvec
 
 
+def _Kx_derivs1_fun(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    jacobian2: ArrayLike,
+    params: ParameterDict,
+    kernel: Kernel,
+    noise: Optional[bool] = True,
+) -> Callable[ArrayLike, Array]:
+    """matrix-vector function for the first derivative of K
+
+    Builds a function that computes the matrix-vector
+    product ∂₂K x.
+    Iterative implementation.
+    """
+    kernel_params = params["kernel_params"]
+
+    def row_fun(x1s):
+        x1s = jnp.expand_dims(x1s, axis=0)
+        return kernel.d1kj(x1s, x2, kernel_params, jacobian2)
+
+    matvec = rowfun_to_matvec(row_fun, init_val=(x1))
+
+    return matvec
+
+
 # Functions to fit a GPR
 
 
@@ -408,6 +433,80 @@ def _predict_derivs_iter(
     # recover the right shape
     ns, _, nd = jacobian.shape
     mu = mu.reshape(ns, nd)
+    return mu
+
+
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_dense(
+    params: Dict[str, Parameter],
+    x_train: ArrayLike,
+    jacobian_train: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts targets with GPR trained on derivatives
+
+    Predicts with GPR, by first building the full kernel matrix
+    and then contracting with the linear coefficients.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
+    C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+    """
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+
+    K_mn = kernel.d0kj(x_train, x, kernel_params, jacobian_train)
+
+    mu = mu + jnp.dot(K_mn.T, c)
+
+    if full_covariance:
+        C_mm = kernel.d01kj(
+            x_train, x_train, kernel_params, jacobian_train, jacobian_train
+        )
+
+        C_mm = C_mm + sigma**2 * jnp.eye(K_mn.shape[0])
+        L_m = jsp.linalg.cholesky(C_mm, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+
+        C_nn = kernel(x, x, kernel_params)
+
+        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
+        return mu, C_nn
+
+    return mu
+
+
+@partial(jit, static_argnums=[6, 7])
+def _predict_y_derivs_iter(
+    params: Dict[str, Parameter],
+    x_train: ArrayLike,
+    jacobian_train: ArrayLike,
+    x: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts targets with GPR trained on derivatives
+
+    Predicts with GPR without instantiating the full matrix.
+    The contraction with the linear coefficients is performed
+    iteratively.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
+    """
+    matvec = _Kx_derivs1_fun(
+        x1=x,
+        x2=x_train,
+        jacobian2=jacobian_train,
+        params=params,
+        kernel=kernel,
+        noise=False,
+    )
+    mu = mu + matvec(c)
     return mu
 
 
