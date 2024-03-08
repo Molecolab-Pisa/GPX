@@ -1,4 +1,5 @@
-from typing import Callable, Dict
+from functools import partial
+from typing import Dict
 
 import jax.numpy as jnp
 from jax import Array, custom_jvp, jit
@@ -21,6 +22,26 @@ from .operations import (
 )
 
 # =============================================================================
+# Kernel functions
+# =============================================================================
+
+# Before the kernel classes, there we have a series of kernel functions.
+# The actual implementation of the kernels is inside these functions, and the
+# kernel classes act mostly as a wrapper.
+# The kernel functions accept the "active_dims" argument. When used inside the
+# kernel_base functions, which, in combination with the kernelizers, define all
+# the kernel functions (gradients, hessians), this ensures that the shape of
+# a jacobian or hessian kernel is the correct one, with zeros in correspondence
+# to unused features. If instead you want to implement your own, advanced version
+# of jacobian/hessian kernel, pay attention to put the zeros in the correct places
+# when handling the "active_dims".
+# A note to avoid confusions: checking if a variable "is None" is perfectly allowed
+# by JIT as it can be evaluated at tracing time. This is used to avoid the need
+# of speciying the active dimensions when all the dimensions are requested.
+# Also note that inside the kernel_base functions, x has shape (n_features,),
+# while instead in the kernel functions x has shape (n_samples, n_features)
+
+# =============================================================================
 # Constant Kernel
 # =============================================================================
 
@@ -31,10 +52,12 @@ def _constant_kernel_base(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> 
 
 @jit
 def constant_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     variance = params["variance"].value
-    return _constant_kernel_base(x1, x2, variance)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _constant_kernel_base(x1[active_dims], x2[active_dims], variance)
 
 
 def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> Array:
@@ -45,10 +68,12 @@ def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> Array
 
 @jit
 def constant_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     variance = params["variance"].value
-    return _constant_kernel(x1, x2, variance)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _constant_kernel(x1[:, active_dims], x2[:, active_dims], variance)
 
 
 # =============================================================================
@@ -62,9 +87,11 @@ def _linear_kernel_base(x1: ArrayLike, x2: ArrayLike) -> Array:
 
 @jit
 def linear_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
-    return _linear_kernel_base(x1, x2)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _linear_kernel_base(x1[active_dims], x2[active_dims])
 
 
 def _linear_kernel(x1: ArrayLike, x2: ArrayLike) -> Array:
@@ -72,8 +99,12 @@ def _linear_kernel(x1: ArrayLike, x2: ArrayLike) -> Array:
 
 
 @jit
-def linear_kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]) -> Array:
-    return _linear_kernel(x1, x2)
+def linear_kernel(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel(x1[:, active_dims], x2[:, active_dims])
 
 
 # =============================================================================
@@ -89,11 +120,13 @@ def _polynomial_kernel_base(
 
 @jit
 def polynomial_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
-    return _polynomial_kernel_base(x1, x2, degree, offset)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _polynomial_kernel_base(x1[active_dims], x2[active_dims], degree, offset)
 
 
 def _polynomial_kernel(
@@ -104,11 +137,13 @@ def _polynomial_kernel(
 
 @jit
 def polynomial_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
-    return _polynomial_kernel(x1, x2, degree, offset)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset)
 
 
 # =============================================================================
@@ -124,11 +159,15 @@ def _no_intercept_polynomial_kernel_base(
 
 @jit
 def no_intercept_polynomial_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
-    return _no_intercept_polynomial_kernel_base(x1, x2, degree, offset)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _no_intercept_polynomial_kernel_base(
+        x1[active_dims], x2[active_dims], degree, offset
+    )
 
 
 def _no_intercept_polynomial_kernel(
@@ -139,11 +178,15 @@ def _no_intercept_polynomial_kernel(
 
 @jit
 def no_intercept_polynomial_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
-    return _no_intercept_polynomial_kernel(x1, x2, degree, offset)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _no_intercept_polynomial_kernel(
+        x1[:, active_dims], x2[:, active_dims], degree, offset
+    )
 
 
 # =============================================================================
@@ -161,10 +204,14 @@ def _squared_exponential_kernel_base(
 
 @jit
 def squared_exponential_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _squared_exponential_kernel_base(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _squared_exponential_kernel_base(
+        x1[active_dims], x2[active_dims], lengthscale
+    )
 
 
 def _squared_exponential_kernel(
@@ -178,10 +225,14 @@ def _squared_exponential_kernel(
 
 @jit
 def squared_exponential_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _squared_exponential_kernel(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _squared_exponential_kernel(
+        x1[:, active_dims], x2[:, active_dims], lengthscale
+    )
 
 
 # =============================================================================
@@ -201,10 +252,12 @@ def _matern12_kernel_base(
 
 @jit
 def matern12_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern12_kernel_base(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _matern12_kernel_base(x1[active_dims], x2[active_dims], lengthscale)
 
 
 def _matern12_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
@@ -217,10 +270,12 @@ def _matern12_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Ar
 
 @jit
 def matern12_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern12_kernel(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern12_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale)
 
 
 # =============================================================================
@@ -241,10 +296,12 @@ def _matern32_kernel_base(
 
 @jit
 def matern32_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern32_kernel_base(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _matern32_kernel_base(x1[active_dims], x2[active_dims], lengthscale)
 
 
 def _matern32_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
@@ -257,10 +314,12 @@ def _matern32_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Ar
 
 @jit
 def matern32_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern32_kernel(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern32_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale)
 
 
 def _matern32_kernel_base_t0(
@@ -321,10 +380,12 @@ def _matern52_kernel_base(
 
 @jit
 def matern52_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern52_kernel_base(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _matern52_kernel_base(x1[active_dims], x2[active_dims], lengthscale)
 
 
 def _matern52_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Array:
@@ -337,10 +398,12 @@ def _matern52_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Ar
 
 @jit
 def matern52_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
-    return _matern52_kernel(x1, x2, lengthscale)
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale)
 
 
 def _matern52_kernel_base_t0(
@@ -397,163 +460,15 @@ def _expsinsquared_kernel_base(
 
 @jit
 def expsinsquared_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
 ) -> Array:
     lengthscale = params["lengthscale"].value
     period = params["periodicity"].value
-    return _expsinsquared_kernel_base(x1, x2, lengthscale, period)
-
-
-# =============================================================================
-# Filter Active Dimensions
-# =============================================================================
-
-
-def active_dims_filter(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters the active dimension in the input
-
-    Given a kernel function operating on two samples x1 and x2, this function
-    yields another kernel function operating on filtered x1 and x2.
-    The filtered input retains only the columns specified in `active_dims`, e.g.,
-    if `active_dims = [0, 1]`, only the first two columns of x1 are retained.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel: kernel function operating on filtered inputs
-    """
-
-    def kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]):
-        x1 = x1[:, active_dims]
-        x2 = x2[:, active_dims]
-        return kernel_func(x1, x2, params)
-
-    return kernel
-
-
-def active_dims_filter_jac(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters the active dimension in the input
-
-    Given a kernel function operating on two samples x1 and x2, this function
-    yields another kernel function operating on filtered x1 and x2 and jacobian.
-    The filtered input retains only the columns specified in `active_dims`, e.g.,
-    if `active_dims = [0, 1]`, only the first two columns of x1 are retained.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel: kernel function operating on filtered inputs
-    """
-
-    def kernel(
-        x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], jacobian: ArrayLike
-    ):
-        x1 = x1[:, active_dims]
-        x2 = x2[:, active_dims]
-        jacobian = jacobian[:, active_dims, :]
-        return kernel_func(x1, x2, params, jacobian)
-
-    return kernel
-
-
-def active_dims_filter_jac2(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters the active dimension in the input
-
-    Given a kernel function operating on two samples x1 and x2, this function
-    yields another kernel function operating on filtered x1 and x2, jacobian1
-    and jacobian2. The filtered input retains only the columns specified in
-    `active_dims`, e.g., if `active_dims = [0, 1]`, only the first two columns
-    of x1 are retained.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel: kernel function operating on filtered inputs
-    """
-
-    def kernel(
-        x1: ArrayLike,
-        x2: ArrayLike,
-        params: Dict[str, Parameter],
-        jacobian1: ArrayLike,
-        jacobian2: ArrayLike,
-    ):
-        x1 = x1[:, active_dims]
-        x2 = x2[:, active_dims]
-        jacobian1 = jacobian1[:, active_dims, :]
-        jacobian2 = jacobian2[:, active_dims, :]
-        return kernel_func(x1, x2, params, jacobian1, jacobian2)
-
-    return kernel
-
-
-def identity_filter(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters every dimension in the input
-
-    Filter with no effects. The `active_dims` argument is not used.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel_func: kernel function
-    """
-
-    def kernel(x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter]):
-        return kernel_func(x1, x2, params)
-
-    return kernel
-
-
-def identity_filter_jac(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters every dimension in the input
-
-    Given a kernel function operating on two samples x1 and x2, this function
-    yields another kernel function operating on filtered x1 and x2, jacobian1
-    and jacobian2. This filter has no effects. The `active_dims` argument is not used.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel: kernel function operating on filtered inputs
-    """
-
-    def kernel(
-        x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], jacobian: ArrayLike
-    ):
-        return kernel_func(x1, x2, params, jacobian)
-
-    return kernel
-
-
-def identity_filter_jac2(kernel_func: Callable, active_dims: ArrayLike) -> Callable:
-    """filters every dimension in the input
-
-    Given a kernel function operating on two samples x1 and x2, this function
-    yields another kernel function operating on filtered x1 and x2, jacobian1
-    and jacobian2. This filter has no effects. The `active_dims` argument is not used.
-
-    Args:
-        kernel_func: kernel function
-        active_dims: active dimensions (columns) to retain in the input
-    Returns:
-        kernel: kernel function operating on filtered inputs
-    """
-
-    def kernel(
-        x1: ArrayLike,
-        x2: ArrayLike,
-        params: Dict[str, Parameter],
-        jacobian1: ArrayLike,
-        jacobian2: ArrayLike,
-    ):
-        return kernel_func(x1, x2, params, jacobian1, jacobian2)
-
-    return kernel
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[0])
+    return _expsinsquared_kernel_base(
+        x1[active_dims], x2[active_dims], lengthscale, period
+    )
 
 
 # =============================================================================
@@ -616,52 +531,36 @@ class Kernel:
     def __init__(self, active_dims: ArrayLike = None) -> None:
         # kernel
         self.active_dims = active_dims
-        self.k = self.filter_input(kernelize(self._kernel_base), self.active_dims)
+
+        self.k = partial(kernelize(self._kernel_base), active_dims=active_dims)
 
         # derivative/hessian kernel
-        self.d0k = self.filter_input(
+        self.d0k = partial(
             grad_kernelize(argnums=0, with_jacob=False)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
-        self.d1k = self.filter_input(
+        self.d1k = partial(
             grad_kernelize(argnums=1, with_jacob=False)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
-        self.d01k = self.filter_input(
+        self.d01k = partial(
             grad_kernelize(argnums=(0, 1), with_jacob=False)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
 
         # derivative/hessian kernel-jacobian products
-        self.d0kj = self.filter_input_jac(
+        self.d0kj = partial(
             grad_kernelize(argnums=0, with_jacob=True)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
-        self.d1kj = self.filter_input_jac(
+        self.d1kj = partial(
             grad_kernelize(argnums=1, with_jacob=True)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
-        self.d01kj = self.filter_input_jac2(
+        self.d01kj = partial(
             grad_kernelize(argnums=(0, 1), with_jacob=True)(self._kernel_base),
-            self.active_dims,
+            active_dims=active_dims,
         )
-
-    @property
-    def active_dims(self):
-        return self._active_dims
-
-    @active_dims.setter
-    def active_dims(self, value):
-        if value is None:
-            self._active_dims = value
-            self.filter_input = identity_filter
-            self.filter_input_jac = identity_filter_jac
-            self.filter_input_jac2 = identity_filter_jac2
-        else:
-            self._active_dims = value
-            self.filter_input = active_dims_filter
-            self.filter_input_jac = active_dims_filter_jac
-            self.filter_input_jac2 = active_dims_filter_jac2
 
     def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
         return self.k(x1, x2, params)
@@ -687,7 +586,7 @@ class Constant(Kernel):
         self._kernel_base = constant_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(constant_kernel, self.active_dims)
+        self.k = partial(constant_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -713,7 +612,7 @@ class Linear(Kernel):
         self._kernel_base = linear_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(linear_kernel, self.active_dims)
+        self.k = partial(linear_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict()
@@ -743,9 +642,9 @@ class Polynomial(Kernel):
         super().__init__(active_dims)
         # faster version for evaluating k
         if no_intercept:
-            self.k = self.filter_input(no_intercept_polynomial_kernel, self.active_dims)
+            self.k = partial(no_intercept_polynomial_kernel, active_dims=active_dims)
         else:
-            self.k = self.filter_input(polynomial_kernel, self.active_dims)
+            self.k = partial(polynomial_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -778,7 +677,7 @@ class SquaredExponential(Kernel):
         self._kernel_base = squared_exponential_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(squared_exponential_kernel, self.active_dims)
+        self.k = partial(squared_exponential_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -806,7 +705,7 @@ class Matern12(Kernel):
         self._kernel_base = matern12_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(matern12_kernel, self.active_dims)
+        self.k = partial(matern12_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -834,7 +733,7 @@ class Matern32(Kernel):
         self._kernel_base = matern32_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(matern32_kernel, self.active_dims)
+        self.k = partial(matern32_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -862,7 +761,7 @@ class Matern52(Kernel):
         self._kernel_base = matern52_kernel_base
         super().__init__(active_dims)
         # faster version for evaluating k
-        self.k = self.filter_input(matern52_kernel, self.active_dims)
+        self.k = partial(matern52_kernel, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -931,43 +830,31 @@ class Sum(Kernel):
     where params1 and params2 are standard GPX parameters for kernels.
     """
 
-    def __init__(
-        self, kernel1: Kernel, kernel2: Kernel, active_dims: ArrayLike = None
-    ) -> None:
+    def __init__(self, kernel1: Kernel, kernel2: Kernel) -> None:
         # components
         self.kernel1 = kernel1
         self.kernel2 = kernel2
 
         # kernel base
+        # note that here and in the following we do not pass active_dims to the
+        # sum_kernels etc because it is already set inside the two kernels
         self._kernel_base = sum_kernels(kernel1._kernel_base, kernel2._kernel_base)
 
         # inherit from Kernel class and pass active dims
-        super().__init__(active_dims)
+        super().__init__(active_dims=None)
 
         # faster evaluation of the kernels
-        self.k = self.filter_input(sum_kernels(kernel1.k, kernel2.k), self.active_dims)
+        self.k = sum_kernels(kernel1.k, kernel2.k)
 
         # derivative/hessian kernel
-        self.d0k = self.filter_input(
-            sum_kernels(kernel1.d0k, kernel2.d0k), self.active_dims
-        )
-        self.d1k = self.filter_input(
-            sum_kernels(kernel1.d1k, kernel2.d1k), self.active_dims
-        )
-        self.d01k = self.filter_input(
-            sum_kernels(kernel1.d01k, kernel2.d01k), self.active_dims
-        )
+        self.d0k = sum_kernels(kernel1.d0k, kernel2.d0k)
+        self.d1k = sum_kernels(kernel1.d1k, kernel2.d1k)
+        self.d01k = sum_kernels(kernel1.d01k, kernel2.d01k)
 
         # derivative/hessian kernel-jacobian products
-        self.d0kj = self.filter_input_jac(
-            sum_kernels_jac(kernel1.d0kj, kernel2.d0kj), self.active_dims
-        )
-        self.d1kj = self.filter_input_jac(
-            sum_kernels_jac(kernel1.d1kj, kernel2.d1kj), self.active_dims
-        )
-        self.d01kj = self.filter_input_jac2(
-            sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj), self.active_dims
-        )
+        self.d0kj = sum_kernels_jac(kernel1.d0kj, kernel2.d0kj)
+        self.d1kj = sum_kernels_jac(kernel1.d1kj, kernel2.d1kj)
+        self.d01kj = sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj)
 
     def default_params(self):
         # simply delegate
@@ -996,67 +883,53 @@ class Prod(Kernel):
     where params1 and params2 are standard GPX parameters for kernels.
     """
 
-    def __init__(
-        self, kernel1: Kernel, kernel2: Kernel, active_dims: ArrayLike = None
-    ) -> None:
+    def __init__(self, kernel1: Kernel, kernel2: Kernel) -> None:
         self.kernel1 = kernel1
         self.kernel2 = kernel2
 
         # kernel base
+        # note that here and in the following we do not pass active_dims to the
+        # sum_kernels etc because it is already set inside the two kernels
         self._kernel_base = prod_kernels(kernel1._kernel_base, kernel2._kernel_base)
 
         # inherit from Kernel class and pass active dims
-        super().__init__(active_dims)
+        super().__init__(active_dims=None)
 
         # faster evaluation of the kernels
-        self.k = self.filter_input(prod_kernels(kernel1.k, kernel2.k), self.active_dims)
+        self.k = prod_kernels(kernel1.k, kernel2.k)
 
         # derivative/hessian kernel
-        self.d0k = self.filter_input(
-            prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d0k, kernel2.d0k, 0),
-            self.active_dims,
+        self.d0k = prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d0k, kernel2.d0k, 0)
+        self.d1k = prod_kernels_deriv(
+            kernel1.k, kernel2.k, kernel1.d1k, kernel2.d1k, -1
         )
-        self.d1k = self.filter_input(
-            prod_kernels_deriv(kernel1.k, kernel2.k, kernel1.d1k, kernel2.d1k, -1),
-            self.active_dims,
-        )
-        self.d01k = self.filter_input(
-            prod_kernels_deriv01(
-                kernel1.k,
-                kernel2.k,
-                kernel1.d0k,
-                kernel2.d0k,
-                kernel1.d1k,
-                kernel2.d1k,
-                kernel1.d01k,
-                kernel2.d01k,
-            ),
-            self.active_dims,
+        self.d01k = prod_kernels_deriv01(
+            kernel1.k,
+            kernel2.k,
+            kernel1.d0k,
+            kernel2.d0k,
+            kernel1.d1k,
+            kernel2.d1k,
+            kernel1.d01k,
+            kernel2.d01k,
         )
 
         # derivative/hessian kernel-jacobian products
-        self.d0kj = self.filter_input_jac(
-            prod_kernels_deriv_jac(kernel1.k, kernel2.k, kernel1.d0kj, kernel2.d0kj, 0),
-            self.active_dims,
+        self.d0kj = prod_kernels_deriv_jac(
+            kernel1.k, kernel2.k, kernel1.d0kj, kernel2.d0kj, 0
         )
-        self.d1kj = self.filter_input_jac(
-            prod_kernels_deriv_jac(
-                kernel1.k, kernel2.k, kernel1.d1kj, kernel2.d1kj, -1
-            ),
-            self.active_dims,
+        self.d1kj = prod_kernels_deriv_jac(
+            kernel1.k, kernel2.k, kernel1.d1kj, kernel2.d1kj, -1
         )
-        self.d01kj = self.filter_input_jac2(
-            prod_kernels_deriv01_jac(
-                kernel1.k,
-                kernel2.k,
-                kernel1.d0kj,
-                kernel2.d0kj,
-                kernel1.d1kj,
-                kernel2.d1kj,
-                kernel1.d01kj,
-                kernel2.d01kj,
-            ),
-            self.active_dims,
+        self.d01kj = prod_kernels_deriv01_jac(
+            kernel1.k,
+            kernel2.k,
+            kernel1.d0kj,
+            kernel2.d0kj,
+            kernel1.d1kj,
+            kernel2.d1kj,
+            kernel1.d01kj,
+            kernel2.d01kj,
         )
 
     def default_params(self):

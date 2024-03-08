@@ -56,9 +56,9 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
 
         @functools.wraps(kernel_func)
         @jit
-        def kernel(x1, x2, params):
+        def kernel(x1, x2, params, active_dims=None):
             _kernel_func = lambda x1: vmap(  # noqa: E731
-                lambda x2: kernel_func(x1, x2, params)
+                lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
             )
 
             @jax.checkpoint
@@ -73,8 +73,12 @@ def kernelize(kernel_func: Callable, lax: bool = True) -> Callable:
 
         @functools.wraps(kernel_func)
         @jit
-        def kernel(x1, x2, params):
-            return vmap(lambda x: vmap(lambda y: kernel_func(x, y, params))(x2))(x1)
+        def kernel(x1, x2, params, active_dims=None):
+            return vmap(
+                lambda x: vmap(
+                    lambda y: kernel_func(x, y, params, active_dims=active_dims)
+                )(x2)
+            )(x1)
 
     return kernel
 
@@ -89,12 +93,12 @@ def _grad0_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         n, nf = x1.shape
         m, _ = x2.shape
 
         _kernel_func = lambda x1: vmap(  # noqa: E731
-            lambda x2: kernel_func(x1, x2, params)
+            lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
         )
 
         @jax.checkpoint
@@ -113,7 +117,7 @@ def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params, jacobian):
+    def kernel(x1, x2, params, jacobian, active_dims=None):
         n, _ = x1.shape
         m, _ = x2.shape
         _, _, jv = jacobian.shape
@@ -121,13 +125,16 @@ def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
         gram = jnp.zeros((n * jv, m))
 
         _kernel_func = lambda x1: vmap(  # noqa: E731
-            lambda x2: kernel_func(x1, x2, params)
+            lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
         )
 
         @jax.checkpoint
         def update_row(i, gram):
             nabla_k = _kernel_func(x1[i])(x2)
             # k = m, i = nf, j = jv
+            # note: active_dims ensures that nabla_k is zero if a feature
+            # is not included, so there's no need to also use active_dims
+            # on the jacobian
             nabla_k = jnp.einsum("ki,ij->jk", nabla_k, jacobian[i])
             return jax.lax.dynamic_update_slice(
                 gram, update=nabla_k, start_indices=(i * jv, 0)
@@ -143,12 +150,12 @@ def _grad1_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         n, _ = x1.shape
         m, mf = x2.shape
 
         _kernel_func = lambda x1: vmap(  # noqa: E731
-            lambda x2: kernel_func(x1, x2, params)
+            lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
         )
 
         @jax.checkpoint
@@ -167,7 +174,7 @@ def _grad1jac_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params, jacobian):
+    def kernel(x1, x2, params, jacobian, active_dims=None):
         n, _ = x1.shape
         m, _ = x2.shape
         _, _, jv = jacobian.shape
@@ -175,13 +182,16 @@ def _grad1jac_kernelize(kernel_func: Callable) -> Callable:
         gram = jnp.zeros((n, m * jv))
 
         _kernel_func = lambda x2: vmap(  # noqa: E731
-            lambda x1: kernel_func(x1, x2, params)
+            lambda x1: kernel_func(x1, x2, params, active_dims=active_dims)
         )
 
         @jax.checkpoint
         def update_col(j, gram):
             nabla_k = _kernel_func(x2[j])(x1)
             # k = m, i = mf, j = jv
+            # note: active_dims ensures that nabla_k is zero if a feature
+            # is not included, so there's no need to also use active_dims
+            # on the jacobian
             nabla_k = jnp.einsum("ki,ij->kj", nabla_k, jacobian[j])
             return jax.lax.dynamic_update_slice(
                 gram, update=nabla_k, start_indices=(0, j * jv)
@@ -197,12 +207,12 @@ def _grad01_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         n, nf = x1.shape
         m, mf = x2.shape
 
         _kernel_func = lambda x1: vmap(  # noqa: E731
-            lambda x2: kernel_func(x1, x2, params), out_axes=1
+            lambda x2: kernel_func(x1, x2, params, active_dims=active_dims), out_axes=1
         )
 
         @jax.checkpoint
@@ -221,7 +231,7 @@ def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
 
     @functools.wraps(kernel_func)
     @jit
-    def kernel(x1, x2, params, jacobian1, jacobian2):
+    def kernel(x1, x2, params, jacobian1, jacobian2, active_dims=None):
         n, _ = x1.shape
         m, _ = x2.shape
         _, _, j1v = jacobian1.shape
@@ -232,7 +242,10 @@ def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
         @jax.checkpoint
         def update_row(i, gram):
             def update_col(j, gram):
-                nabla_k = kernel_func(x1[i], x2[j], params)
+                nabla_k = kernel_func(x1[i], x2[j], params, active_dims=active_dims)
+                # note: active_dims ensures that nabla_k is zero if a feature
+                # is not included, so there's no need to also use active_dims
+                # on the jacobian
                 nabla_k = jnp.einsum(
                     "ai,ab,bj->ij", jacobian1[i], nabla_k, jacobian2[j]
                 )

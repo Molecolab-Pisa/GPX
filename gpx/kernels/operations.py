@@ -85,6 +85,11 @@ def kernel_center_test_test(
 
 
 def sum_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    # note: the kernels must have the same dimensions because it's just
+    # (n_samples1, n_samples2) if kernel_func* computes the kernel
+    # (n_samples1*n_features, n_samples2) if kernel_func* computes the d0
+    # (n_samples1, n_samples2*n_features) if kernel_func* computes the d1
+    # (n_samples1*n_features, n_samples2*n_features) if [...] d01
     def kernel(x1, x2, params):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
@@ -94,6 +99,8 @@ def sum_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
 
 
 def sum_kernels_jac(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    # here the two functions compute the product with one jacobian, so
+    # their shape is consistent
     def kernel(x1, x2, params, jacobian):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
@@ -105,6 +112,8 @@ def sum_kernels_jac(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
 
 
 def sum_kernels_jac2(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    # here both functions compute the hessian with two jacobians, so their
+    # shape is consistent
     def kernel(x1, x2, params, jacobian1, jacobian2):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
@@ -116,6 +125,7 @@ def sum_kernels_jac2(kernel_func1: Callable, kernel_func2: Callable) -> Callable
 
 
 def prod_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    # consistent shapes, see "sum_kernels"
     def kernel(x1, x2, params):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
@@ -131,6 +141,10 @@ def prod_kernels_deriv(
     deriv_func2: Callable,
     axis: int,
 ) -> Callable:
+    # here we must ensure that the shapes are consistent by repeating the entries
+    # of the kernels that are not derived. For each sample, the jacobian kernel
+    # has a shape multiplied by n_features (M below). Each of these entries multiplies
+    # the entry of that sample in the non-derived kernel.
     def kernel(x1, x2, params):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
