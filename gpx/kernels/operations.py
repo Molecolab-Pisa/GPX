@@ -80,17 +80,28 @@ def kernel_center_test_test(
 
 
 # =============================================================================
-# Kernel Decorator
+# Sum of two kernels
 # =============================================================================
+#
 
 
 def sum_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    """defines a kernel as the sum of two kernels
+
+    Defines a new kernel function as the sum of two kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
     # note: the kernels must have the same dimensions because it's just
     # (n_samples1, n_samples2) if kernel_func* computes the kernel
     # (n_samples1*n_features, n_samples2) if kernel_func* computes the d0
     # (n_samples1, n_samples2*n_features) if kernel_func* computes the d1
     # (n_samples1*n_features, n_samples2*n_features) if [...] d01
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         return kernel_func1(x1, x2, params1) + kernel_func2(x1, x2, params2)
@@ -99,9 +110,20 @@ def sum_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
 
 
 def sum_kernels_jac(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    """defines a kernel as the sum of two kernels
+
+    Defines a new kernel function as the sum of two kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts a single jacobian.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
     # here the two functions compute the product with one jacobian, so
     # their shape is consistent
-    def kernel(x1, x2, params, jacobian):
+    def kernel(x1, x2, params, jacobian, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         return kernel_func1(x1, x2, params1, jacobian) + kernel_func2(
@@ -112,9 +134,20 @@ def sum_kernels_jac(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
 
 
 def sum_kernels_jac2(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    """defines a kernel as the sum of two kernels
+
+    Defines a new kernel function as the sum of two kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
     # here both functions compute the hessian with two jacobians, so their
     # shape is consistent
-    def kernel(x1, x2, params, jacobian1, jacobian2):
+    def kernel(x1, x2, params, jacobian1, jacobian2, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         return kernel_func1(x1, x2, params1, jacobian1, jacobian2) + kernel_func2(
@@ -125,8 +158,19 @@ def sum_kernels_jac2(kernel_func1: Callable, kernel_func2: Callable) -> Callable
 
 
 def prod_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
+    """defines a kernel as the product of two kernels
+
+    Defines a new kernel function as the product of two kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
     # consistent shapes, see "sum_kernels"
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         return kernel_func1(x1, x2, params1) * kernel_func2(x1, x2, params2)
@@ -141,11 +185,28 @@ def prod_kernels_deriv(
     deriv_func2: Callable,
     axis: int,
 ) -> Callable:
+    """defines a kernel as the derivative of the product of two kernels
+
+    Defines a new kernel function as the derivative of the product of two
+    kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+    If the derivative is w.r.t. the first argument:
+
+        k = (∂₀k₁)k₂ + k₁(∂₀k₂)
+
+    Otherwise change ∂₀ with ∂₁.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
     # here we must ensure that the shapes are consistent by repeating the entries
     # of the kernels that are not derived. For each sample, the jacobian kernel
     # has a shape multiplied by n_features (M below). Each of these entries multiplies
     # the entry of that sample in the non-derived kernel.
-    def kernel(x1, x2, params):
+    def kernel(x1, x2, params, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, M = x1.shape
@@ -168,7 +229,22 @@ def prod_kernels_deriv01(
     deriv01_func1: Callable,
     deriv01_func2: Callable,
 ) -> Callable:
-    def kernel(x1, x2, params):
+    """defines a kernel as the hessian of the product of two kernels
+
+    Defines a new kernel function as the hessian of the product of two
+    kernel functions.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+
+        k = (∂₀∂₁k₁)k₂ + (∂₁k₁)(∂₀k₂) + (∂₀k₁)(∂₁k₂) + k₁(∂₀∂₁k₂)
+
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
+    def kernel(x1, x2, params, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, M = x2.shape
@@ -193,7 +269,25 @@ def prod_kernels_deriv_jac(
     deriv_func2: Callable,
     axis: int,
 ) -> Callable:
-    def kernel(x1, x2, params, jacobian):
+    """defines a kernel as the derivative of the product of two kernels
+
+    Defines a new kernel function as the derivative of the product of two
+    kernel functions.
+    The function also computes the product with the Jacobian of the input.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+    If the derivative is w.r.t. the first argument:
+
+        k = (J∂₀k₁)k₂ + k₁(J∂₀k₂)
+
+    Otherwise change ∂₀ with ∂₁.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
+    def kernel(x1, x2, params, jacobian, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, _, jv = jacobian.shape
@@ -218,7 +312,25 @@ def prod_kernels_deriv01_jac(
     deriv01_func1: Callable,
     deriv01_func2: Callable,
 ) -> Callable:
-    def kernel(x1, x2, params, jacobian1, jacobian2):
+    """defines a kernel as the hessian of the product of two kernels
+
+    Defines a new kernel function as the hessian of the product of two
+    kernel functions.
+    The function also computes the product with the Jacobian of the inputs.
+    The new kernel will accept a "params" argument storing the parameters
+    for the first and second kernel as "kernel1" and "kernel2", respectively.
+    The new kernel accepts one jacobian for x1 and one for x2.
+    If the derivative is w.r.t. the first argument:
+
+        k = (J₀∂₀∂₁k₁J₁)k₂ + (∂₁k₁J₁)(J₀∂₀k₂) + (J₀∂₀k₁)(∂₁k₂J₁) + k₁(J₀∂₀∂₁k₂J₁)
+
+    Otherwise change ∂₀ with ∂₁.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
+    def kernel(x1, x2, params, jacobian1, jacobian2, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, _, jv1 = jacobian1.shape

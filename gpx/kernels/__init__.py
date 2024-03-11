@@ -10,10 +10,12 @@ from .kernels import (
     SquaredExponential,
     Sum,
     constant_kernel_base,
+    expsinsquared_kernel_base,
     linear_kernel_base,
     matern12_kernel_base,
     matern32_kernel_base,
     matern52_kernel_base,
+    no_intercept_polynomial_kernel_base,
     polynomial_kernel_base,
     squared_exponential_kernel_base,
 )

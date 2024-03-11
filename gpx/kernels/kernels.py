@@ -532,6 +532,11 @@ class Kernel:
         # kernel
         self.active_dims = active_dims
 
+        # override the kernel_base to use the active_dims
+        # this is needed for the sum/prod kernels that call grad_kernelize
+        # on the children's kernel_base functions
+        self._kernel_base = partial(self._kernel_base, active_dims=active_dims)
+
         self.k = partial(kernelize(self._kernel_base), active_dims=active_dims)
 
         # derivative/hessian kernel
@@ -837,7 +842,7 @@ class Sum(Kernel):
 
         # kernel base
         # note that here and in the following we do not pass active_dims to the
-        # sum_kernels etc because it is already set inside the two kernels
+        # sum_kernels etc because it is already set inside the two base kernels
         self._kernel_base = sum_kernels(kernel1._kernel_base, kernel2._kernel_base)
 
         # inherit from Kernel class and pass active dims
