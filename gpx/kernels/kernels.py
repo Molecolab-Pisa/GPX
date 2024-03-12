@@ -328,11 +328,12 @@ def _linear_kernel_d01kj(
 ) -> Array:
     ns1, _ = x1.shape
     ns2, _ = x2.shape
-    _, _, nv = jacobian1.shape
+    _, _, nv1 = jacobian1.shape
+    _, _, nv2 = jacobian2.shape
     d01k = jnp.einsum(
         "ifv,jfu->ivju", jacobian1[:, active_dims], jacobian2[:, active_dims]
     )
-    d01k = d01k.reshape(ns1 * nv, ns2 * nv)
+    d01k = d01k.reshape(ns1 * nv1, ns2 * nv2)
     return d01k
 
 
