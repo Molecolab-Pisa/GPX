@@ -874,15 +874,15 @@ class Linear(Kernel):
         # faster version for evaluating k
         self.k = partial(linear_kernel, active_dims=active_dims)
 
-    #         # faster gradients/hessians
-    #         self.d0k = partial(linear_kernel_d0k, active_dims=active_dims)
-    #         self.d1k = partial(linear_kernel_d1k, active_dims=active_dims)
-    #         self.d01k = partial(linear_kernel_d01k, active_dims=active_dims)
-    #
-    #         # faster gradients/hessian-jacobian products
-    #         self.d0kj = partial(linear_kernel_d0kj, active_dims=active_dims)
-    #         self.d1kj = partial(linear_kernel_d1kj, active_dims=active_dims)
-    #         self.d01kj = partial(linear_kernel_d01kj, active_dims=active_dims)
+        # faster gradients/hessians
+        self.d0k = partial(linear_kernel_d0k, active_dims=active_dims)
+        self.d1k = partial(linear_kernel_d1k, active_dims=active_dims)
+        self.d01k = partial(linear_kernel_d01k, active_dims=active_dims)
+
+        # faster gradients/hessian-jacobian products
+        self.d0kj = partial(linear_kernel_d0kj, active_dims=active_dims)
+        self.d1kj = partial(linear_kernel_d1kj, active_dims=active_dims)
+        self.d01kj = partial(linear_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict()
