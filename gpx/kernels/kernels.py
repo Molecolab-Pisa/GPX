@@ -60,6 +60,9 @@ def constant_kernel_base(
     return _constant_kernel_base(x1[active_dims], x2[active_dims], variance)
 
 
+# Faster implementations
+
+
 def _constant_kernel(x1: ArrayLike, x2: ArrayLike, variance: ArrayLike) -> Array:
     ns1, _ = x1.shape
     ns2, _ = x2.shape
@@ -74,6 +77,112 @@ def constant_kernel(
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     return _constant_kernel(x1[:, active_dims], x2[:, active_dims], variance)
+
+
+def _constant_kernel_d0k(x1: ArrayLike, x2: ArrayLike) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, _ = x2.shape
+    return jnp.zeros((ns1 * nf1, ns2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d0k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d0k(x1, x2)
+
+
+def _constant_kernel_d1k(x1: ArrayLike, x2: ArrayLike) -> Array:
+    ns1, _ = x1.shape
+    ns2, nf2 = x2.shape
+    return jnp.zeros((ns1, ns2 * nf2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d1k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d1k(x1, x2)
+
+
+def _constant_kernel_d01k(x1: ArrayLike, x2: ArrayLike) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, nf2 = x2.shape
+    return jnp.zeros((ns1 * nf1, ns2 * nf2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d01k(x1, x2)
+
+
+def _constant_kernel_d0kj(x1: ArrayLike, x2: ArrayLike, jacobian: ArrayLike) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    # (n_samples, n_features, n_variables)
+    _, _, nv1 = jacobian.shape
+    return jnp.zeros((ns1 * nv1, ns2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d0kj(x1, x2, jacobian)
+
+
+def _constant_kernel_d1kj(x1: ArrayLike, x2: ArrayLike, jacobian: ArrayLike) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    # (n_samples, n_features, n_variables)
+    _, _, nv2 = jacobian.shape
+    return jnp.zeros((ns1, ns2 * nv2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d1kj(x1, x2, jacobian)
+
+
+def _constant_kernel_d01kj(
+    x1: ArrayLike, x2: ArrayLike, jacobian1: ArrayLike, jacobian2: ArrayLike
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    # (n_samples, n_features, n_variables)
+    _, _, nv1 = jacobian1.shape
+    _, _, nv2 = jacobian2.shape
+    return jnp.zeros((ns1 * nv1, ns2 * nv2), dtype=jnp.float64)
+
+
+@jit
+def constant_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims=None,
+) -> Array:
+    # variance and active dimensions are not needed here
+    return _constant_kernel_d01kj(x1, x2, jacobian1, jacobian2)
 
 
 # =============================================================================
@@ -92,6 +201,9 @@ def linear_kernel_base(
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[0])
     return _linear_kernel_base(x1[active_dims], x2[active_dims])
+
+
+# Faster implementations
 
 
 def _linear_kernel(x1: ArrayLike, x2: ArrayLike) -> Array:
@@ -590,8 +702,19 @@ class Constant(Kernel):
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = constant_kernel_base
         super().__init__(active_dims)
+
         # faster version for evaluating k
         self.k = partial(constant_kernel, active_dims=active_dims)
+
+        # faster gradients/hessians
+        self.d0k = partial(constant_kernel_d0k, active_dims=active_dims)
+        self.d1k = partial(constant_kernel_d1k, active_dims=active_dims)
+        self.d01k = partial(constant_kernel_d01k, active_dims=active_dims)
+
+        # faster gradients/hessian-jacobian products
+        self.d0kj = partial(constant_kernel_d0kj, active_dims=active_dims)
+        self.d1kj = partial(constant_kernel_d1kj, active_dims=active_dims)
+        self.d01kj = partial(constant_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict(
