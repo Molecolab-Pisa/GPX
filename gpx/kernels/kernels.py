@@ -219,6 +219,137 @@ def linear_kernel(
     return _linear_kernel(x1[:, active_dims], x2[:, active_dims])
 
 
+def _linear_kernel_d0k(x1: ArrayLike, x2: ArrayLike, active_dims: ArrayLike) -> Array:
+    ns1, _ = x1.shape
+    d0k = jnp.zeros(x2.T.shape)
+    d0k = d0k.at[active_dims].set(x2.T[active_dims])
+    d0k = jnp.tile(d0k, (ns1, 1))
+    return d0k
+
+
+@jit
+def linear_kernel_d0k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d0k(x1, x2, active_dims)
+
+
+def _linear_kernel_d1k(x1: ArrayLike, x2: ArrayLike, active_dims: ArrayLike) -> Array:
+    ns2, _ = x2.shape
+    d1k = jnp.zeros(x1.shape)
+    d1k = d1k.at[:, active_dims].set(x1[:, active_dims])
+    d1k = jnp.tile(d1k, (1, ns2))
+    return d1k
+
+
+@jit
+def linear_kernel_d1k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d1k(x1, x2, active_dims)
+
+
+def _linear_kernel_d01k(x1: ArrayLike, x2: ArrayLike, active_dims: ArrayLike) -> Array:
+    ns1, nf = x1.shape
+    ns2, _ = x2.shape
+    d01k = jnp.zeros((nf, nf), dtype=jnp.float64)
+    d01k = d01k.at[active_dims, active_dims].set(1.0)
+    d01k = jnp.tile(d01k, (ns1, ns2))
+    return d01k
+
+
+@jit
+def linear_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d01k(x1, x2, active_dims)
+
+
+def _linear_kernel_d0kj(
+    x1: ArrayLike, x2: ArrayLike, jacobian: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    _, _, nv = jacobian.shape
+    d0k = jnp.einsum("ifv,jf->ivj", jacobian[:, active_dims], x2[:, active_dims])
+    d0k = d0k.reshape(ns1 * nv, ns2)
+    return d0k
+
+
+@jit
+def linear_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d0kj(x1, x2, jacobian, active_dims)
+
+
+def _linear_kernel_d1kj(
+    x1: ArrayLike, x2: ArrayLike, jacobian: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    _, _, nv = jacobian.shape
+    d1k = jnp.einsum("if,jfv->ijv", x1[:, active_dims], jacobian[:, active_dims])
+    d1k = d1k.reshape(ns1, ns2 * nv)
+    return d1k
+
+
+@jit
+def linear_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d1kj(x1, x2, jacobian, active_dims)
+
+
+def _linear_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _ = x2.shape
+    _, _, nv = jacobian1.shape
+    d01k = jnp.einsum(
+        "ifv,jfu->ivju", jacobian1[:, active_dims], jacobian2[:, active_dims]
+    )
+    d01k = d01k.reshape(ns1 * nv, ns2 * nv)
+    return d01k
+
+
+@jit
+def linear_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims=None,
+) -> Array:
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _linear_kernel_d01kj(x1, x2, jacobian1, jacobian2, active_dims)
+
+
 # =============================================================================
 # Polynomial Kernel
 # =============================================================================
@@ -739,8 +870,19 @@ class Linear(Kernel):
     def __init__(self, active_dims: ArrayLike = None) -> None:
         self._kernel_base = linear_kernel_base
         super().__init__(active_dims)
+
         # faster version for evaluating k
         self.k = partial(linear_kernel, active_dims=active_dims)
+
+    #         # faster gradients/hessians
+    #         self.d0k = partial(linear_kernel_d0k, active_dims=active_dims)
+    #         self.d1k = partial(linear_kernel_d1k, active_dims=active_dims)
+    #         self.d01k = partial(linear_kernel_d01k, active_dims=active_dims)
+    #
+    #         # faster gradients/hessian-jacobian products
+    #         self.d0kj = partial(linear_kernel_d0kj, active_dims=active_dims)
+    #         self.d1kj = partial(linear_kernel_d1kj, active_dims=active_dims)
+    #         self.d01kj = partial(linear_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict()
