@@ -689,6 +689,200 @@ _matern52_kernel_base.defjvps(
     ).reshape(primal_out.shape),
 )
 
+
+def _matern52_kernel_d0k(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, _ = x2.shape
+    d0k = jnp.zeros((ns1, nf1, ns2))
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    d2 = squared_distances(z1, z2)[:, jnp.newaxis, :]
+    d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
+    diff = jnp.swapaxes(jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2), 1, 2)
+    d0k = d0k.at[:, active_dims, :].set(
+        -(jnp.sqrt(5.0) / (3.0 * lengthscale)) * (1 + d) * jnp.exp(-d) * diff
+    )
+    return d0k.reshape(ns1 * nf1, ns2)
+
+
+@jit
+def matern52_kernel_d0k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+):
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d0k(x1, x2, lengthscale, active_dims)
+
+
+def _matern52_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, _ = x2.shape
+    _, _, nv = jacobian.shape
+    d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(ns1, nf1, ns2)
+    d0kj = jnp.einsum(
+        "ifv,ifj->ivj", jacobian[:, active_dims, :], d0k[:, active_dims, :]
+    )
+    return d0kj.reshape(ns1 * nv, ns2)
+
+
+@jit
+def matern52_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d0kj(x1, x2, lengthscale, jacobian, active_dims)
+
+
+def _matern52_kernel_d1k(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, nf2 = x2.shape
+    d1k = jnp.zeros((ns1, ns2, nf2))
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    d2 = squared_distances(z1, z2)[:, :, jnp.newaxis]
+    d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
+    diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2)
+    d1k = d1k.at[:, :, active_dims].set(
+        (jnp.sqrt(5.0) / (3.0 * lengthscale)) * (1 + d) * jnp.exp(-d) * diff
+    )
+    return d1k.reshape(ns1, ns2 * nf2)
+
+
+@jit
+def matern52_kernel_d1k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+):
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x2.shape[1])
+    return _matern52_kernel_d1k(x1, x2, lengthscale, active_dims)
+
+
+def _matern52_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, nf2 = x2.shape
+    _, _, nv = jacobian.shape
+    d1k = _matern52_kernel_d1k(x1, x2, lengthscale, active_dims).reshape(ns1, ns2, nf2)
+    d1kj = jnp.einsum(
+        "ijf,jfv->ijv", d1k[:, :, active_dims], jacobian[:, active_dims, :]
+    )
+    return d1kj.reshape(ns1, ns2 * nv)
+
+
+@jit
+def matern52_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x2.shape[1])
+    return _matern52_kernel_d1kj(x1, x2, lengthscale, jacobian, active_dims)
+
+
+def _matern52_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, nf2 = x2.shape
+    nact = active_dims.shape[0]
+    d01k = jnp.zeros((ns1, ns2, nf1, nf2))
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    d2 = squared_distances(z1, z2)
+    d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
+    diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2)
+    ii, jj = jnp.meshgrid(active_dims, active_dims)
+    d01k = d01k.at[:, :, ii, jj].set(
+        -(5.0 / (3.0 * lengthscale**2))
+        * jnp.exp(-d)[:, :, jnp.newaxis, jnp.newaxis]
+        * diff[:, :, jnp.newaxis, :]
+        * diff[:, :, :, jnp.newaxis]
+    )
+    diagonal = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d) * (1.0 + d)
+    d01k = d01k.at[:, :, active_dims, active_dims].add(
+        diagonal[:, :, jnp.newaxis].repeat(nact, axis=2)
+    )
+    return jnp.swapaxes(d01k, 1, 2).reshape(ns1 * nf1, ns2 * nf2)
+
+
+@jit
+def matern52_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+):
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d01k(x1, x2, lengthscale, active_dims)
+
+
+def _matern52_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, nf2 = x2.shape
+    _, _, nv1 = jacobian1.shape
+    _, _, nv2 = jacobian2.shape
+    d01k = _matern52_kernel_d01k(x1, x2, lengthscale, active_dims).reshape(
+        ns1, nf1, ns2, nf2
+    )
+    d01kj = jnp.einsum(
+        "ifv,ifje,jeu->ivju",
+        jacobian1[:, active_dims, :],
+        d01k[:, active_dims, :, :][:, :, :, active_dims],
+        jacobian2[:, active_dims, :],
+    )
+    return d01kj.reshape(ns1 * nv1, ns2 * nv2)
+
+
+@jit
+def matern52_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims=None,
+):
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d01kj(
+        x1, x2, lengthscale, jacobian1, jacobian2, active_dims
+    )
+
+
 # =============================================================================
 # Periodic kernels
 # =============================================================================
@@ -1033,6 +1227,15 @@ class Matern52(Kernel):
         super().__init__(active_dims)
         # faster version for evaluating k
         self.k = partial(matern52_kernel, active_dims=active_dims)
+        # faster gradients/hessians
+        self.d0k = partial(matern52_kernel_d0k, active_dims=active_dims)
+        self.d1k = partial(matern52_kernel_d1k, active_dims=active_dims)
+        self.d01k = partial(matern52_kernel_d01k, active_dims=active_dims)
+
+        # faster gradients/hessian-jacobian products
+        self.d0kj = partial(matern52_kernel_d0kj, active_dims=active_dims)
+        self.d1kj = partial(matern52_kernel_d1kj, active_dims=active_dims)
+        self.d01kj = partial(matern52_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict(
