@@ -810,26 +810,19 @@ def _matern52_kernel_d01k(
     x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
 ) -> Array:
     ns1, nf1 = x1.shape
-    ns2, nf2 = x2.shape
-    nact = active_dims.shape[0]
-    d01k = jnp.zeros((ns1, ns2, nf1, nf2))
+    ns2, _ = x2.shape
     z1 = x1[:, active_dims] / lengthscale
     z2 = x2[:, active_dims] / lengthscale
     d2 = squared_distances(z1, z2)
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
-    diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2)
-    ii, jj = jnp.meshgrid(active_dims, active_dims)
-    d01k = d01k.at[:, :, ii, jj].set(
-        -(5.0 / (3.0 * lengthscale**2))
-        * jnp.exp(-d)[:, :, jnp.newaxis, jnp.newaxis]
-        * diff[:, :, jnp.newaxis, :]
-        * diff[:, :, :, jnp.newaxis]
-    )
-    diagonal = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d) * (1.0 + d)
-    d01k = d01k.at[:, :, active_dims, active_dims].add(
-        diagonal[:, :, jnp.newaxis].repeat(nact, axis=2)
-    )
-    return jnp.swapaxes(d01k, 1, 2).reshape(ns1 * nf1, ns2 * nf2)
+    diff = jnp.zeros((ns1, ns2, nf1))
+    diff = diff.at[:, :, active_dims].set(jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2))
+    constant = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)
+    d01k = jnp.einsum("st,stf,ste->sfte", -constant, diff, diff)
+    diag = constant * (1.0 + d)
+    d01k = d01k.at[:, active_dims, :, active_dims].add(diag)
+    d01k = d01k.reshape(ns1 * nf1, ns2 * nf1)
+    return d01k
 
 
 @jit
@@ -861,12 +854,14 @@ def _matern52_kernel_d01kj(
     d2 = squared_distances(z1, z2)
     d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
     constant = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)
-    diff_j1 = jnp.einsum('stf,sfv->stv', diff, jacobian1[:, active_dims])
-    diff_j2 = jnp.einsum('stf,tfu->stu', diff, jacobian2[:, active_dims])
-    d01kj = jnp.einsum('st,stv,stu->svtu', -constant, diff_j1, diff_j2)
+    diff_j1 = jnp.einsum("stf,sfv->stv", diff, jacobian1[:, active_dims])
+    diff_j2 = jnp.einsum("stf,tfu->stu", diff, jacobian2[:, active_dims])
+    d01kj = jnp.einsum("st,stv,stu->svtu", -constant, diff_j1, diff_j2)
     diag = constant * (1.0 + d)
-    diag = diag[:,:, jnp.newaxis].repeat(nact, axis=2)
-    diag = jnp.einsum('sfv,stf,tfu->svtu',jacobian1[:, active_dims], diag, jacobian2[:, active_dims])
+    diag = diag[:, :, jnp.newaxis].repeat(nact, axis=2)
+    diag = jnp.einsum(
+        "sfv,stf,tfu->svtu", jacobian1[:, active_dims], diag, jacobian2[:, active_dims]
+    )
     d01kj = d01kj + diag
     # output a square kernel, samples time variables
     d01kj = d01kj.reshape(ns1 * nv1, ns2 * nv2)
