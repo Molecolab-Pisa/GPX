@@ -302,6 +302,31 @@ def prod_kernels_deriv_jac(
     return kernel
 
 
+def prod_kernels_deriv0_jaccoef(
+    kernel_func1: Callable,
+    kernel_func2: Callable,
+    deriv_func1: Callable,
+    deriv_func2: Callable,
+) -> Callable:
+    """defines a kernel as the derivative of the product of two kernels
+
+    Defines a new kernel function as the derivative of the product of two
+    kernel functions.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
+    def kernel(x1, x2, params, jaccoef, active_dims=None):
+        params1 = params["kernel1"]
+        params2 = params["kernel2"]
+        return kernel_func1(x1, x2, params1) * deriv_func2(
+            x1, x2, params2, jaccoef
+        ) + deriv_func1(x1, x2, params1, jaccoef) * kernel_func2(x1, x2, params2)
+
+    return kernel
+
+
 def prod_kernels_deriv01_jac(
     kernel_func1: Callable,
     kernel_func2: Callable,
@@ -344,6 +369,43 @@ def prod_kernels_deriv01_jac(
             * deriv0_func2(x1, x2, params2, jacobian1).repeat(jv2, axis=-1)
             + deriv01_func1(x1, x2, params1, jacobian1, jacobian2)
             * kernel_func2(x1, x2, params2).repeat(jv1, axis=0).repeat(jv2, axis=-1)
+        )
+
+    return kernel
+
+
+def prod_kernels_deriv01_jaccoef(
+    kernel_func1: Callable,
+    kernel_func2: Callable,
+    deriv0_func1: Callable,
+    deriv0_func2: Callable,
+    deriv1_func1: Callable,
+    deriv1_func2: Callable,
+    deriv01_func1: Callable,
+    deriv01_func2: Callable,
+) -> Callable:
+    """defines a kernel as the hessian of the product of two kernels
+
+    Defines a new kernel function as the hessian of the product of two
+    kernel functions.
+
+    Note: active_dims is there as a placeholder, and it is not passed to
+          the two kernels.
+    """
+
+    def kernel(x1, x2, params, jaccoef, jacobian2, active_dims=None):
+        params1 = params["kernel1"]
+        params2 = params["kernel2"]
+        _, _, jv2 = jacobian2.shape
+        return (
+            kernel_func1(x1, x2, params1).repeat(jv2, axis=-1)
+            * deriv01_func2(x1, x2, params2, jaccoef, jacobian2)
+            + deriv0_func1(x1, x2, params1, jaccoef).repeat(jv2, axis=-1)
+            * deriv1_func2(x1, x2, params2, jacobian2)
+            + deriv1_func1(x1, x2, params1, jacobian2)
+            * deriv0_func2(x1, x2, params2, jaccoef).repeat(jv2, axis=-1)
+            + deriv01_func1(x1, x2, params1, jaccoef, jacobian2)
+            * kernel_func2(x1, x2, params2).repeat(jv2, axis=-1)
         )
 
     return kernel

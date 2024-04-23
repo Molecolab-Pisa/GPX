@@ -13,8 +13,10 @@ from .kernelizers import grad_kernelize, kernelize
 from .operations import (
     prod_kernels,
     prod_kernels_deriv,
+    prod_kernels_deriv0_jaccoef,
     prod_kernels_deriv01,
     prod_kernels_deriv01_jac,
+    prod_kernels_deriv01_jaccoef,
     prod_kernels_deriv_jac,
     sum_kernels,
     sum_kernels_jac,
@@ -1533,8 +1535,9 @@ class Sum(Kernel):
         self.d1kj = sum_kernels_jac(kernel1.d1kj, kernel2.d1kj)
         self.d01kj = sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj)
 
-        # TODO: we need a dedicated function for the d0kjc and d01kjc
-        # until that moment, it will use the autodifferentiated function.
+        # derivative/hessian-jaccoef
+        self.d0kjc = sum_kernels_jac(kernel1.d0kjc, kernel2.d0kjc)
+        self.d01kjc = sum_kernels_jac2(kernel1.d01kjc, kernel2.d01kjc)
 
     def default_params(self):
         # simply delegate
@@ -1612,8 +1615,23 @@ class Prod(Kernel):
             kernel2.d01kj,
         )
 
-        # TODO: we need a dedicated function for the d0kjc and d01kjc
-        # until that moment, it will use the autodifferentiated function.
+        # derivative/hessian-jaccoef
+        self.d0kjc = prod_kernels_deriv0_jaccoef(
+            kernel1.k,
+            kernel2.k,
+            kernel1.d0kjc,
+            kernel2.d0kjc,
+        )
+        self.d01kjc = prod_kernels_deriv01_jaccoef(
+            kernel1.k,
+            kernel2.k,
+            kernel1.d0kjc,
+            kernel2.d0kjc,
+            kernel1.d1kj,
+            kernel2.d1kj,
+            kernel1.d01kjc,
+            kernel2.d01kjc,
+        )
 
     def default_params(self):
         # simply delegate
