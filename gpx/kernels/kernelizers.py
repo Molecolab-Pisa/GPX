@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 from functools import partial
-from typing import Callable, Tuple, Union
+from typing import Callable, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -145,6 +145,61 @@ def _grad0jac_kernelize(kernel_func: Callable) -> Callable:
     return kernel
 
 
+def _grad0jaccoef_kernelize(
+    kernel_func: Callable, trace_samples: Optional[bool] = True
+) -> Callable:
+    kernel_func = jacrev(kernel_func, argnums=0)
+
+    if trace_samples:
+        # immediately trace over the samples, the output kernel has
+        # shape (m,), where m is the number of samples in the second input
+        @functools.wraps(kernel_func)
+        @jit
+        def kernel(x1, x2, params, jaccoef, active_dims=None):
+            n, _ = x1.shape
+            m, _ = x2.shape
+
+            gram = jnp.zeros((m,))
+
+            _kernel_func = lambda x1: vmap(  # noqa: E731
+                lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
+            )
+
+            @jax.checkpoint
+            def update_row(i, gram):
+                nabla_k = _kernel_func(x1[i])(x2)
+                nabla_k = jnp.einsum("kf,f->k", nabla_k, jaccoef[i])
+                return gram.at[:].add(nabla_k)
+
+            return jax.lax.fori_loop(0, n, update_row, gram)
+
+        return kernel
+
+    else:
+
+        @functools.wraps(kernel_func)
+        @jit
+        def kernel(x1, x2, params, jaccoef, active_dims=None):
+            n, _ = x1.shape
+            m, _ = x2.shape
+
+            gram = jnp.zeros((n, m))
+
+            _kernel_func = lambda x1: vmap(  # noqa: E731
+                lambda x2: kernel_func(x1, x2, params, active_dims=active_dims)
+            )
+
+            @jax.checkpoint
+            def update_row(i, gram):
+                nabla_k = _kernel_func(x1[i])(x2)
+                nabla_k = jnp.einsum("kf,f->k", nabla_k, jaccoef[i])
+                return gram.at[i].set(nabla_k)
+
+            return jax.lax.fori_loop(0, n, update_row, gram)
+
+    return kernel
+
+
 def _grad1_kernelize(kernel_func: Callable) -> Callable:
     kernel_func = jacrev(kernel_func, argnums=1)
 
@@ -260,18 +315,90 @@ def _grad01jac_kernelize(kernel_func: Callable) -> Callable:
     return kernel
 
 
+def _grad01jaccoef_kernelize(
+    kernel_func: Callable, trace_samples: Optional[bool] = True
+) -> Callable:
+    kernel_func = jacfwd(jacrev(kernel_func, argnums=0), argnums=1)
+
+    if trace_samples:
+        # immediately trace over the samples, the output kernel has
+        # shape (m,), where m is the number of samples in the second input
+        @functools.wraps(kernel_func)
+        @jit
+        def kernel(x1, x2, params, jaccoef, jacobian, active_dims=None):
+            n, _ = x1.shape
+            m, _ = x2.shape
+            _, _, nv = jacobian.shape
+
+            gram = jnp.zeros((m * nv,))
+
+            @jax.checkpoint
+            def update_row(i, gram):
+                def update_col(j, gram):
+                    nabla_k = kernel_func(x1[i], x2[j], params, active_dims=active_dims)
+                    nabla_k = jnp.einsum("f,fe,eu->u", jaccoef[i], nabla_k, jacobian[j])
+                    base = jax.lax.dynamic_slice(
+                        gram, start_indices=(j * nv,), slice_sizes=(nv,)
+                    )
+                    return jax.lax.dynamic_update_slice(
+                        gram, update=base + nabla_k, start_indices=(j * nv,)
+                    )
+
+                return jax.lax.fori_loop(0, m, update_col, gram)
+
+            return jax.lax.fori_loop(0, n, update_row, gram)
+
+        return kernel
+
+    else:
+
+        @functools.wraps(kernel_func)
+        @jit
+        def kernel(x1, x2, params, jaccoef, jacobian, active_dims=None):
+            n, _ = x1.shape
+            m, _ = x2.shape
+            _, _, nv = jacobian.shape
+
+            gram = jnp.zeros((n, m * nv))
+
+            @jax.checkpoint
+            def update_row(i, gram):
+                def update_col(j, gram):
+                    nabla_k = kernel_func(x1[i], x2[j], params, active_dims=active_dims)
+                    nabla_k = jnp.einsum("f,fe,eu->u", jaccoef[i], nabla_k, jacobian[j])
+                    return jax.lax.dynamic_update_slice(
+                        gram, update=nabla_k[jnp.newaxis], start_indices=(i, j * nv)
+                    )
+
+                return jax.lax.fori_loop(0, m, update_col, gram)
+
+            return jax.lax.fori_loop(0, n, update_row, gram)
+
+    return kernel
+
+
 # =============================================================================
 # Derivative Kernel Decorator: high level decorators
 # =============================================================================
 
 
-def grad0_kernelize(kernel_func: Callable, with_jacob: bool = False):
+def grad0_kernelize(
+    kernel_func: Callable,
+    with_jacob: bool = False,
+    with_jaccoef: bool = False,
+    trace_samples: bool = True,
+):
     if with_jacob:
-        return _grad0jac_kernelize(kernel_func)
+        if with_jaccoef:
+            return _grad0jaccoef_kernelize(kernel_func, trace_samples=trace_samples)
+        else:
+            return _grad0jac_kernelize(kernel_func)
     else:
         return _grad0_kernelize(kernel_func)
 
 
+# we only have/want functions that deal with contracted jacobian-coeffs
+# for the zeroth-argument, so here we don't have that option
 def grad1_kernelize(kernel_func: Callable, with_jacob: bool = False):
     if with_jacob:
         return _grad1jac_kernelize(kernel_func)
@@ -279,27 +406,66 @@ def grad1_kernelize(kernel_func: Callable, with_jacob: bool = False):
         return _grad1_kernelize(kernel_func)
 
 
-def grad01_kernelize(kernel_func: Callable, with_jacob: bool = False):
+def grad01_kernelize(
+    kernel_func: Callable,
+    with_jacob: bool = False,
+    with_jaccoef: bool = False,
+    trace_samples: bool = True,
+):
     if with_jacob:
-        return _grad01jac_kernelize(kernel_func)
+        if with_jaccoef:
+            return _grad01jaccoef_kernelize(kernel_func, trace_samples=trace_samples)
+        else:
+            return _grad01jac_kernelize(kernel_func)
     else:
         return _grad01_kernelize(kernel_func)
 
 
 def grad_kernelize(
-    argnums: Union[int, Tuple[int, int]], with_jacob: bool = False
+    argnums: Union[int, Tuple[int, int]],
+    with_jacob: bool = False,
+    with_jaccoef: bool = False,
+    trace_samples: bool = True,
 ) -> Callable:
     """Kernelizes the input kernel with respect to the dimension
     specified in argnums.
 
     Only argnums == 0, 1, (0, 1) is available.
+
+    Args:
+        argnums: input w.r.t the derivative is taken
+                 can be 0, 1, or (0, 1)
+        with_jacob: whether to return a gradient/hessian already
+                    contracted with the jacobian(s)
+        with_jaccoef: whether the jacobian associated to the first
+                      input is already contracted with the regression
+                      coefficients, i.e. it is given as:
+
+                      >>> jaccoef = jnp.einsum("sv,sfv->sf", coeffs, jacobian)
+
+                      Note: only used if with_jacob is True.
+
+        trace_samples: whether to trace over the samples of the first
+                       input when using a jaccoef.
+
+                      Note: used when with_jaccoef is True.
     """
     if argnums == 0:
-        return partial(grad0_kernelize, with_jacob=with_jacob)
+        return partial(
+            grad0_kernelize,
+            with_jacob=with_jacob,
+            with_jaccoef=with_jaccoef,
+            trace_samples=trace_samples,
+        )
     elif argnums == 1:
         return partial(grad1_kernelize, with_jacob=with_jacob)
     elif argnums == (0, 1):
-        return partial(grad01_kernelize, with_jacob=with_jacob)
+        return partial(
+            grad01_kernelize,
+            with_jacob=with_jacob,
+            with_jaccoef=with_jaccoef,
+            trace_samples=trace_samples,
+        )
     else:
         raise ValueError(
             f"argnums={argnums} is not valid. Allowed argnums: 0, 1, (0, 1)"
