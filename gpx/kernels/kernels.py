@@ -1179,6 +1179,21 @@ class Kernel:
             active_dims=active_dims,
         )
 
+        # functions accepting a 0-jacobian already contracted
+        # with the regression coefficients
+        self.d0kjc = partial(
+            grad_kernelize(
+                argnums=0, with_jacob=True, with_jaccoef=True, trace_samples=False
+            )(self._kernel_base),
+            active_dims=active_dims,
+        )
+        self.d01kjc = partial(
+            grad_kernelize(
+                argnums=(0, 1), with_jacob=True, with_jaccoef=True, trace_samples=False
+            )(self._kernel_base),
+            active_dims=active_dims,
+        )
+
     def __call__(self, x1: ArrayLike, x2: ArrayLike, params: Dict) -> Array:
         return self.k(x1, x2, params)
 
@@ -1324,6 +1339,11 @@ class SquaredExponential(Kernel):
         # faster hessian-jacobian
         self.d01kj = partial(squared_exponential_kernel_d01kj, active_dims=active_dims)
 
+        # faster hessian-jaccoef
+        self.d01kjc = partial(
+            squared_exponential_kernel_d01kjc, active_dims=active_dims
+        )
+
     def default_params(self):
         return dict(
             lengthscale=Parameter(
@@ -1416,6 +1436,9 @@ class Matern52(Kernel):
         self.d0kj = partial(matern52_kernel_d0kj, active_dims=active_dims)
         self.d1kj = partial(matern52_kernel_d1kj, active_dims=active_dims)
         self.d01kj = partial(matern52_kernel_d01kj, active_dims=active_dims)
+
+        # faster hessian-jaccoef
+        self.d01kjc = partial(matern52_kernel_d01kjc, active_dims=active_dims)
 
     def default_params(self):
         return dict(
@@ -1510,6 +1533,9 @@ class Sum(Kernel):
         self.d1kj = sum_kernels_jac(kernel1.d1kj, kernel2.d1kj)
         self.d01kj = sum_kernels_jac2(kernel1.d01kj, kernel2.d01kj)
 
+        # TODO: we need a dedicated function for the d0kjc and d01kjc
+        # until that moment, it will use the autodifferentiated function.
+
     def default_params(self):
         # simply delegate
         return {
@@ -1585,6 +1611,9 @@ class Prod(Kernel):
             kernel1.d01kj,
             kernel2.d01kj,
         )
+
+        # TODO: we need a dedicated function for the d0kjc and d01kjc
+        # until that moment, it will use the autodifferentiated function.
 
     def default_params(self):
         # simply delegate
