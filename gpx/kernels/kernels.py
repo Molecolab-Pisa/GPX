@@ -478,6 +478,7 @@ def squared_exponential_kernel(
         x1[:, active_dims], x2[:, active_dims], lengthscale
     )
 
+
 def _squared_exponential_kernel_d01k(
     x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
 ) -> Array:
@@ -487,21 +488,74 @@ def _squared_exponential_kernel_d01k(
     z2 = x2[:, active_dims] / lengthscale
     ed2 = jnp.exp(-squared_distances(z1, z2))
     diff = jnp.zeros((ns1, ns2, nf))
-    diff = diff.at[:, :, active_dims].set((2. / lengthscale) * (z1[:, jnp.newaxis] - z2))
+    diff = diff.at[:, :, active_dims].set(
+        (2.0 / lengthscale) * (z1[:, jnp.newaxis] - z2)
+    )
     d01k = jnp.einsum("st,stf,ste->sfte", -ed2, diff, diff)
-    diag = ed2 * (2. / lengthscale**2)
+    diag = ed2 * (2.0 / lengthscale**2)
     d01k = d01k.at[:, active_dims, :, active_dims].add(diag)
     d01k = d01k.reshape(ns1 * nf, ns2 * nf)
     return d01k
 
+
 @jit
 def squared_exponential_kernel_d01k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims: ArrayLike = None,
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims: ArrayLike = None,
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     return _squared_exponential_kernel_d01k(x1, x2, lengthscale, active_dims)
+
+
+def _squared_exponential_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf = x1.shape
+    ns2, _ = x2.shape
+    _, _, nv1 = jacobian1.shape
+    _, _, nv2 = jacobian2.shape
+    nact = active_dims.shape[0]
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    ed2 = jnp.exp(-squared_distances(z1, z2))
+    diff = (2.0 / lengthscale) * (z1[:, jnp.newaxis] - z2)
+    diff_j1 = jnp.einsum("stf,sfv->stv", diff, jacobian1[:, active_dims])
+    diff_j2 = jnp.einsum("stf,tfu->stu", diff, jacobian2[:, active_dims])
+    d01kj = jnp.einsum("st,stv,stu->svtu", -ed2, diff_j1, diff_j2)
+    diag = ed2 * (2.0 / lengthscale**2)
+    diag = diag[:, :, jnp.newaxis].repeat(nact, axis=2)
+    diag = jnp.einsum(
+        "sfv,stf,tfu->svtu", jacobian1[:, active_dims], diag, jacobian2[:, active_dims]
+    )
+    d01kj = d01kj + diag
+    d01kj = d01kj.reshape(ns1 * nv1, ns2 * nv2)
+    return d01kj
+
+
+@jit
+def squared_exponential_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike = None,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _squared_exponential_kernel_d01kj(
+        x1, x2, lengthscale, jacobian1, jacobian2, active_dims
+    )
 
 
 # =============================================================================
@@ -1173,6 +1227,9 @@ class SquaredExponential(Kernel):
 
         # faster gradients/hessian
         self.d01k = partial(squared_exponential_kernel_d01k, active_dims=active_dims)
+
+        # faster hessian-jacobian
+        self.d01kj = partial(squared_exponential_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict(
