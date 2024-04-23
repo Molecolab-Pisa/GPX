@@ -478,6 +478,31 @@ def squared_exponential_kernel(
         x1[:, active_dims], x2[:, active_dims], lengthscale
     )
 
+def _squared_exponential_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike, active_dims: ArrayLike
+) -> Array:
+    ns1, nf = x1.shape
+    ns2, _ = x2.shape
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    ed2 = jnp.exp(-squared_distances(z1, z2))
+    diff = jnp.zeros((ns1, ns2, nf))
+    diff = diff.at[:, :, active_dims].set((2. / lengthscale) * (z1[:, jnp.newaxis] - z2))
+    d01k = jnp.einsum("st,stf,ste->sfte", -ed2, diff, diff)
+    diag = ed2 * (2. / lengthscale**2)
+    d01k = d01k.at[:, active_dims, :, active_dims].add(diag)
+    d01k = d01k.reshape(ns1 * nf, ns2 * nf)
+    return d01k
+
+@jit
+def squared_exponential_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims: ArrayLike = None,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _squared_exponential_kernel_d01k(x1, x2, lengthscale, active_dims)
+
 
 # =============================================================================
 # Matern(1/2) Kernel
@@ -1145,6 +1170,9 @@ class SquaredExponential(Kernel):
         super().__init__(active_dims)
         # faster version for evaluating k
         self.k = partial(squared_exponential_kernel, active_dims=active_dims)
+
+        # faster gradients/hessian
+        self.d01k = partial(squared_exponential_kernel_d01k, active_dims=active_dims)
 
     def default_params(self):
         return dict(
