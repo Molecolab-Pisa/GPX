@@ -330,6 +330,7 @@ def _predict_derivs_dense(
     mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Array:
     return _sgpr._predict_derivs_dense(
         params=params,
@@ -341,6 +342,7 @@ def _predict_derivs_dense(
         mu=mu,
         kernel=kernel,
         full_covariance=full_covariance,
+        jaccoef=jaccoef,
     )
 
 
@@ -377,6 +379,7 @@ def _predict_y_derivs_dense(
     mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Array:
     return _sgpr._predict_y_derivs_dense(
         params=params,
@@ -386,6 +389,7 @@ def _predict_y_derivs_dense(
         c=c,
         mu=mu,
         kernel=kernel,
+        jaccoef=jaccoef,
     )
 
 

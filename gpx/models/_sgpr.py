@@ -463,6 +463,7 @@ def _predict_derivs_dense(
     mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Array:
     """predicts with a SGPR (projected processes)
 
@@ -473,6 +474,12 @@ def _predict_derivs_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
+
+    if jaccoef is not None:
+        # we have the contracted coefficients, so we try to be faster
+        return mu + jnp.sum(
+            kernel.d01kjc(x_locs, x, kernel_params, jaccoef, jacobian), axis=0
+        )
 
     K_nm = kernel.d01kj(x, x_locs, kernel_params, jacobian, jacobian_locs)
     mu = mu + jnp.dot(K_nm, c)
@@ -564,6 +571,7 @@ def _predict_y_derivs_dense(
     mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Array:
     """predicts targets with a SGPR (projected processes)
     trained on derivatives.
@@ -574,6 +582,10 @@ def _predict_y_derivs_dense(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
     m = x_locs.shape[0]
+
+    if jaccoef is not None:
+        # we have the contracted jacobian, so we try to be faster
+        return mu + jnp.sum(kernel.d0kjc(x_locs, x, kernel_params, jaccoef), axis=0)
 
     K_mn = kernel.d0kj(x_locs, x, kernel_params, jacobian_locs)
 

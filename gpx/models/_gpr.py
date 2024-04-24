@@ -363,15 +363,16 @@ def _predict_derivs_dense(
     # note that this is incompatible with full_covariance as we
     # do not have the kernel
     if jaccoef is not None:
-        mu = kernel.d01kjc(
-            x1=x_train,
-            x2=x,
-            params=params["kernel_params"],
-            jaccoef=jaccoef,
-            jacobian=jacobian,
+        return mu + jnp.sum(
+            kernel.d01kjc(
+                x1=x_train,
+                x2=x,
+                params=params["kernel_params"],
+                jaccoef=jaccoef,
+                jacobian=jacobian,
+            ),
+            axis=0,
         )  # shape (n_samples, n_variables)
-        mu = jnp.sum(mu, axis=0)  # trace samples
-        return mu
 
     K_mn = _A_derivs_lhs(
         x1=x_train,
@@ -476,8 +477,10 @@ def _predict_y_derivs_dense(
 
     if jaccoef is not None:
         # we have the contracted jacobian so we try to be faster
-        mu = kernel.d0kjc(x1=x_train, x2=x, params=kernel_params, jaccoef=jaccoef)
-        return jnp.sum(mu, axis=0)
+        return mu + jnp.sum(
+            kernel.d0kjc(x1=x_train, x2=x, params=kernel_params, jaccoef=jaccoef),
+            axis=0,
+        )
 
     K_mn = kernel.d0kj(x_train, x, kernel_params, jacobian_train)
 

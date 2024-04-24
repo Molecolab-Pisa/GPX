@@ -354,11 +354,16 @@ def fit_derivs(
         kernel=state.kernel,
         mean_function=zero_mean,
     )
+    # also store the contracted jacobian
+    jac_locs = state.params["jacobian_locs"].value
+    ns, _, nv = jac_locs.shape
+    jaccoef = jnp.einsum("sv,sfv->sf", c.reshape(ns, nv), jac_locs)
     state = state.update(
         dict(
             x_train=x,
             y_train=y,
             jacobian_train=jacobian,
+            jaccoef=jaccoef,
             c=c,
             mu=mu,
             is_fitted=False,
@@ -455,6 +460,8 @@ def predict_derivs(
         raise RuntimeError(
             "'full_covariance=True' is not compatible with 'iterative=True'"
         )
+    # full_covariance not compatible with using the contracted jacobian
+    jaccoef = None if full_covariance else state.jaccoef
     if iterative:
         return _predict_derivs_iter(
             params=state.params,
@@ -476,6 +483,7 @@ def predict_derivs(
         mu=0.0,
         kernel=state.kernel,
         full_covariance=full_covariance,
+        jaccoef=jaccoef,
     )
 
 
@@ -513,6 +521,8 @@ def predict_y_derivs(
         raise RuntimeError(
             "'full_covariance=True' is not compatible with 'iterative=True'"
         )
+    # full_covariance not compatible with contracted jacobian
+    jaccoef = None if full_covariance else state.jaccoef
     if iterative:
         return _predict_y_derivs_iter(
             params=state.params,
@@ -532,6 +542,7 @@ def predict_y_derivs(
         mu=state.mu,
         kernel=state.kernel,
         full_covariance=full_covariance,
+        jaccoef=jaccoef,
     )
 
 
