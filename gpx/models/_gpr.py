@@ -346,6 +346,7 @@ def _predict_derivs_dense(
     mu: ArrayLike,
     kernel: Kernel,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Union[Array, Tuple[Array, Array]]:
     """predicts derivative values with GPR
 
@@ -358,6 +359,20 @@ def _predict_derivs_dense(
 
     where K = ∂₁∂₂K
     """
+    # we have the contracted jacobian, so we try to be faster
+    # note that this is incompatible with full_covariance as we
+    # do not have the kernel
+    if jaccoef is not None:
+        mu = kernel.d01kjc(
+            x1=x_train,
+            x2=x,
+            params=params["kernel_params"],
+            jaccoef=jaccoef,
+            jacobian=jacobian,
+        )  # shape (n_samples, n_variables)
+        mu = jnp.sum(mu, axis=0)  # trace samples
+        return mu
+
     K_mn = _A_derivs_lhs(
         x1=x_train,
         jacobian1=jacobian_train,
@@ -446,6 +461,7 @@ def _predict_y_derivs_dense(
     mu: ArrayLike,
     kernel: Callable,
     full_covariance: Optional[bool] = False,
+    jaccoef: Optional[ArrayLike] = None,
 ) -> Array:
     """predicts targets with GPR trained on derivatives
 
@@ -457,6 +473,11 @@ def _predict_y_derivs_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
+
+    if jaccoef is not None:
+        # we have the contracted jacobian so we try to be faster
+        mu = kernel.d0kjc(x1=x_train, x2=x, params=kernel_params, jaccoef=jaccoef)
+        return jnp.sum(mu, axis=0)
 
     K_mn = kernel.d0kj(x_train, x, kernel_params, jacobian_train)
 
