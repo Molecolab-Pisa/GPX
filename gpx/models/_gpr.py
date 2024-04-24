@@ -359,6 +359,8 @@ def _predict_derivs_dense(
 
     where K = ∂₁∂₂K
     """
+    ns, _, nd = jacobian.shape
+
     # we have the contracted jacobian, so we try to be faster
     # note that this is incompatible with full_covariance as we
     # do not have the kernel
@@ -373,7 +375,7 @@ def _predict_derivs_dense(
             ),
             axis=0,
         )
-        return mu.reshape(-1, 1)
+        return mu.reshape(ns, nd)
 
     K_mn = _A_derivs_lhs(
         x1=x_train,
@@ -411,7 +413,6 @@ def _predict_derivs_dense(
         return mu, C_nn
 
     # recover the right shape
-    ns, _, nd = jacobian.shape
     mu = mu.reshape(ns, nd)
     return mu
 

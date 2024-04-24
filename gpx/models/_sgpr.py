@@ -481,7 +481,7 @@ def _predict_derivs_dense(
         mu = mu + jnp.sum(
             kernel.d01kjc(x_locs, x, kernel_params, jaccoef, jacobian), axis=0
         )
-        return mu.reshape(-1, 1)
+        return mu.reshape(n, nd)
 
     K_nm = kernel.d01kj(x, x_locs, kernel_params, jacobian, jacobian_locs)
     mu = mu + jnp.dot(K_nm, c)
