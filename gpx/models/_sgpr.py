@@ -474,16 +474,17 @@ def _predict_derivs_dense(
     """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
+    n, _, nd = jacobian.shape
 
     if jaccoef is not None:
         # we have the contracted coefficients, so we try to be faster
-        return mu + jnp.sum(
+        mu = mu + jnp.sum(
             kernel.d01kjc(x_locs, x, kernel_params, jaccoef, jacobian), axis=0
         )
+        return mu.reshape(-1, 1)
 
     K_nm = kernel.d01kj(x, x_locs, kernel_params, jacobian, jacobian_locs)
     mu = mu + jnp.dot(K_nm, c)
-    n, _, nd = jacobian.shape
     mu = mu.reshape(n, nd)
 
     if full_covariance:
@@ -582,10 +583,12 @@ def _predict_y_derivs_dense(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
     m = x_locs.shape[0]
+    n = x.shape[0]
 
     if jaccoef is not None:
         # we have the contracted jacobian, so we try to be faster
-        return mu + jnp.sum(kernel.d0kjc(x_locs, x, kernel_params, jaccoef), axis=0)
+        mu = mu + jnp.sum(kernel.d0kjc(x_locs, x, kernel_params, jaccoef), axis=0)
+        return mu.reshape(n, c.shape[1])
 
     K_mn = kernel.d0kj(x_locs, x, kernel_params, jacobian_locs)
 

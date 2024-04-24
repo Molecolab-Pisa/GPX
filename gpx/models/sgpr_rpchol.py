@@ -366,11 +366,15 @@ def fit_derivs(
         kernel=state.kernel,
         mean_function=zero_mean,
     )
+    # also store the contracted jacobian
+    ns, _, nv = jacobian_locs.shape
+    jaccoef = jnp.einsum("sv,sfv->sf", c.reshape(ns, nv), jacobian_locs)
     state = state.update(
         dict(
             x_train=x,
             y_train=y,
             jacobian_train=jacobian,
+            jaccoef=jaccoef,
             c=c,
             mu=mu,
             is_fitted=False,
@@ -480,6 +484,8 @@ def predict_derivs(
             mu=0.0,
             kernel=state.kernel,
         )
+    # full_covariance is not compatible with jaccoef
+    jaccoef = None if full_covariance else state.jaccoef
     return _predict_derivs_dense(
         params=state.params,
         x_locs=state.x_locs,
@@ -490,6 +496,7 @@ def predict_derivs(
         mu=0.0,
         kernel=state.kernel,
         full_covariance=full_covariance,
+        jaccoef=jaccoef,
     )
 
 
@@ -537,6 +544,8 @@ def predict_y_derivs(
             mu=state.mu,
             kernel=state.kernel,
         )
+    # full_covariance is not compatible with jaccoef
+    jaccoef = None if full_covariance else state.jaccoef
     return _predict_y_derivs_dense(
         params=state.params,
         x_locs=state.x_locs,
@@ -546,6 +555,7 @@ def predict_y_derivs(
         mu=state.mu,
         kernel=state.kernel,
         full_covariance=full_covariance,
+        jaccoef=jaccoef,
     )
 
 
