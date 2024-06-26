@@ -730,3 +730,54 @@ def _lml_derivs_iter(
     mll = mll / m
 
     return mll
+
+
+@partial(jit, static_argnums=[5, 6])
+def _mse(
+    params: Dict[str, Parameter],
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    kernel: Callable,
+    mean_function: Callable,
+    coeff: float,
+) -> Array:
+    """Computes the mean squared loss for the target and its derivative
+
+    mse = 1/N*Σ_i(μ_i - y_i)**2 + coeff * 1/N * 1/Natoms * Σ_j||∂μ_j/∂x - ∂y_j/∂x||**2
+
+    """
+    kernel_params = params["kernel_params"]
+
+    mu = mean_function(y)
+    y = y - mu
+    _, _, jv = y_derivs.shape
+    y_derivs = y_derivs.reshape((-1, 1))
+    y_tilde = jnp.concatenate((y, y_derivs))
+
+    C_mm = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
+    C_derivs = kernel.d0kj(x, x, kernel_params, jacobian)
+
+    C_tilde = jnp.concatenate((C_mm, C_derivs))
+
+    U, s, Vt = jnp.linalg.svd(C_tilde, full_matrices=False)
+
+    Aeff = jnp.diag(s) @ Vt
+    beff = U.T @ y_tilde
+
+    c = jnp.linalg.solve(Aeff, beff).reshape(-1, 1)
+
+    K_mm = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=False)
+    mu = jnp.dot(c.T, K_mm).reshape(-1, 1)
+
+    K_nm = kernel.d1kj(x, x, kernel_params, jacobian)
+    y_pred_derivs = jnp.dot(c.T, K_nm)
+
+    loss = ((mu - y) ** 2).mean() + coeff * (
+        jnp.sum(
+            (y_pred_derivs.reshape(-1, jv) - y_derivs.reshape(-1, jv)) ** 2, axis=-1
+        ).mean()
+    )
+
+    return loss

@@ -297,6 +297,36 @@ class BaseGP:
             return -lml
         return lml
 
+    def mse_loss(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        jacobian: ArrayLike,
+        y_derivs: ArrayLike,
+        coeff: ArrayLike = 1.0,
+    ) -> Array:
+        """Computes the mean squared loss for the target and its derivative
+
+            mse = 1/N * Σ_i(μ_i - y_i)**2
+                 + coeff * 1/N * 1/Natoms * Σ_j||∂μ_j/∂x - ∂y_j/∂x||**2
+
+        Args:
+            state: model state
+            x: observations
+            y: labels
+            jacobian: jacobian of x
+            y_derivs: derivatives of y
+            coeff: coefficient to scale forces error
+        """
+        return self.mse_fun(
+            self.state,
+            x=x,
+            y=y,
+            jacobian=jacobian,
+            y_derivs=y_derivs,
+            coeff=coeff,
+        )
+
     def is_fitted(self):
         return hasattr(self.state, "c")
 
