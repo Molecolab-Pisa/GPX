@@ -17,8 +17,8 @@ try:
     import pso_jax
 except ImportError:
     warnings.warn(
-        "PSO-JAX is not installed. Interface to PSO-JAX optimizer is
-         not available.",
+        """PSO-JAX is not installed. Interface to PSO-JAX optimizer is
+         not available.""",
         stacklevel=2,
     )
 
