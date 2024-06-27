@@ -278,6 +278,44 @@ def _fit_derivs_iter(
     return c, mu
 
 
+@partial(jit, static_argnums=[5, 6])
+def _fit_ol(
+    params: Dict[str, Parameter],
+    x: ArrayLike,
+    y: ArrayLike,
+    y_derivs: ArrayLike,
+    jacobian: ArrayLike,
+    kernel: Callable,
+    mean_function: Callable,
+) -> Tuple[Array, Array]:
+    """fits GPR operator learning
+
+    μ = m(y)
+
+    c = ((K_nn + σ²I  ∂K_nn/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+    """
+    kernel_params = params["kernel_params"]
+
+    mu = mean_function(y)
+    y = y - mu
+    y_derivs = y_derivs.reshape((-1, 1))
+    y_tilde = jnp.concatenate((y, y_derivs))
+
+    C_tilde = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
+    C_tilde = jnp.concatenate((C_tilde, kernel.d0kj(x, x, kernel_params, jacobian)))
+
+    U, s, Vt = jnp.linalg.svd(C_tilde, full_matrices=False)
+
+    Aeff = jnp.diag(s) @ Vt
+
+    beff = U.T @ y_tilde
+
+    c = jnp.linalg.solve(Aeff, beff).reshape(-1, 1)
+
+    return c, mu
+
+
 # functions to predict with a GPR
 
 
@@ -539,7 +577,49 @@ def _predict_y_derivs_iter(
     return mu
 
 
-# Functions to compute the log marginal likelihood
+@partial(jit, static_argnums=(6, 7))
+def _predict_ol(
+    params: Dict[str, Parameter],
+    x_train: ArrayLike,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Callable,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts targts with GPR operator learning
+
+    μ = K_nm ((K_mm + σ²I  ∂K_mm/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+    ∂μ/∂x = ∂K_nm/∂x ((K_mm + σ²I  ∂K_mm/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+    C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+
+    """
+    kernel_params = params["kernel_params"]
+
+    K_mn = _A_lhs(x1=x_train, x2=x, params=params, kernel=kernel, noise=False)
+
+    mu = mu + jnp.dot(c.T, K_mn).reshape(-1, 1)
+
+    K_mn = kernel.d1kj(x_train, x, kernel_params, jacobian)
+    y_derivs = jnp.dot(c.T, K_mn).reshape(-1, 1)
+
+    if full_covariance:
+        C_mm = _A_lhs(x1=x_train, x2=x_train, params=params, kernel=kernel, noise=True)
+        L_m = jsp.linalg.cholesky(C_mm, lower=True)
+        G_mn = jsp.linalg.solve_triangular(L_m, K_mn, lower=True)
+
+        C_nn = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=False)
+
+        C_nn = C_nn - jnp.dot(G_mn.T, G_mn)
+        return mu, C_nn
+
+    return mu, y_derivs
+
+
+# Functions to compute the loss
 
 
 @partial(jit, static_argnums=(3, 4))
@@ -756,10 +836,8 @@ def _mse(
     y_derivs = y_derivs.reshape((-1, 1))
     y_tilde = jnp.concatenate((y, y_derivs))
 
-    C_mm = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
-    C_derivs = kernel.d0kj(x, x, kernel_params, jacobian)
-
-    C_tilde = jnp.concatenate((C_mm, C_derivs))
+    C_tilde = _A_lhs(x1=x, x2=x, params=params, kernel=kernel, noise=True)
+    C_tilde = jnp.concatenate((C_tilde, kernel.d0kj(x, x, kernel_params, jacobian)))
 
     U, s, Vt = jnp.linalg.svd(C_tilde, full_matrices=False)
 

@@ -107,6 +107,43 @@ def scipy_minimize_derivs(
     return scipy_minimize(state=state, x=x, y=y, loss_fn=loss_fn, callback=callback)
 
 
+def scipy_minimize_ol(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    y_derivs: ArrayLike,
+    jacobian: ArrayLike,
+    loss_fn: Callable,
+    callback: Optional[Callable] = None,
+) -> Tuple[ModelState, OptimizeResult]:
+    """minimization of a loss function using SciPy's L-BFGS-B
+
+    Performs the minimization of the `loss_fn` loss function using
+    SciPy's L-BFGS-B optimizator. Passes the jacobian to the loss
+    function, useful to train on derivative values.
+
+    Args:
+        state: model state. Should have an attribute `params`
+               containing the parameters to be optimized, and
+               attributes `params_forward_transforms` and
+               `params_backward_transforms` storing the forward
+               and backward function that constraining the values
+               of the hyperparameters.
+               The state is passed as an argument to the loss function.
+        x: observations
+        y: target values
+        y_derivs: target derivatives
+        jacobian: jacobian of x
+        loss_fn: loss function with signature loss_fn(state, x, y),
+                 returning a scalar value
+    Returns:
+        state: updated model state
+        optres: optimization results, as output by the SciPy's optimizer
+    """
+    loss_fn = partial(loss_fn, y_derivs=y_derivs, jacobian=jacobian)
+    return scipy_minimize(state=state, x=x, y=y, loss_fn=loss_fn, callback=callback)
+
+
 # ============================================================================
 # Callbacks
 # ============================================================================

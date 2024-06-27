@@ -20,6 +20,7 @@ from ._gpr import (
     _fit_derivs_dense,
     _fit_derivs_iter,
     _fit_iter,
+    _fit_ol,
     _lml_dense,
     _lml_derivs_dense,
     _lml_derivs_iter,
@@ -29,6 +30,7 @@ from ._gpr import (
     _predict_derivs_dense,
     _predict_derivs_iter,
     _predict_iter,
+    _predict_ol,
     _predict_y_derivs_dense,
     _predict_y_derivs_iter,
 )
@@ -420,6 +422,53 @@ def fit_derivs(
     return state
 
 
+def fit_ol(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    y_derivs: ArrayLike,
+    jacobian: ArrayLike,
+) -> ModelState:
+    """fits operator learning gaussian process
+
+    μ = m(y)
+
+    c = ((K_nn + σ²I  ∂K_nn/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+    Args:
+        state: model state
+        x: observations
+        y: labels
+        y_derivs: derivatives of y
+        jacobian: jacobian of x
+    Returns:
+        state: fitted model state
+    """
+
+    c, mu = _fit_ol(
+        params=state.params,
+        x=x,
+        y=y,
+        y_derivs=y_derivs,
+        jacobian=jacobian,
+        kernel=state.kernel,
+        mean_function=state.mean_function,
+    )
+    state = state.update(
+        dict(
+            x_train=x,
+            y_train=y,
+            y_derivs_train=y_derivs,
+            jacobian_train=jacobian,
+            c=c,
+            mu=mu,
+            is_fitted=True,
+            is_fitted_derivs=False,
+        )
+    )
+    return state
+
+
 # Functions to predict with GPR
 
 
@@ -598,6 +647,46 @@ def predict_y_derivs(
         kernel=state.kernel,
         full_covariance=full_covariance,
         jaccoef=jaccoef,
+    )
+
+
+def predict_ol(
+    state: ModelState,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    full_covariance: Optional[bool] = False,
+) -> Array:
+    """predicts with operator learning gaussian process
+
+        μ = K_nm ((K_mm + σ²I  ∂K_mm/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+        ∂μ/∂x = ∂K_nm/∂x ((K_mm + σ²I  ∂K_mm/∂x).T)⁻¹ (y  ∂y/∂x).T
+
+        C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
+
+    Args:
+        state: model state
+        x_train: train observations
+        x: observations
+        full_covariance: whether to return the covariance matrix too
+    Returns:
+        μ: predicted mean
+        ∂μ/∂x: predicted derivative
+        C_nn: predicted covariance
+    """
+    if not state.is_fitted:
+        raise RuntimeError(
+            "Model is not fitted. Run `fit_ol` to fit the model before prediction."
+        )
+    return _predict_ol(
+        params=state.params,
+        x_train=state.x_train,
+        x=x,
+        jacobian=jacobian,
+        c=state.c,
+        mu=state.mu,
+        kernel=state.kernel,
+        full_covariance=full_covariance,
     )
 
 
@@ -807,10 +896,12 @@ class GPR(BaseGP):
     # fit policies
     _fit_fun = staticmethod(fit)
     _fit_derivs_fun = staticmethod(fit_derivs)
+    _fit_ol_fun = staticmethod(fit_ol)
     # prediction policies
     _predict_fun = staticmethod(predict)
     _predict_derivs_fun = staticmethod(predict_derivs)
     _predict_y_derivs_fun = staticmethod(predict_y_derivs)
+    _predict_ol_fun = staticmethod(predict_ol)
     # sample policies
     _sample_prior_fun = staticmethod(sample_prior)
     _sample_posterior_fun = staticmethod(sample_posterior)

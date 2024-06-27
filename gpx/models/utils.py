@@ -234,3 +234,97 @@ def randomized_minimization_derivs(
         return state, *optres, states, losses
     else:
         return state, *optres
+
+
+def randomized_minimization_ol(
+    key: KeyArray,
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    y_derivs: ArrayLike,
+    jacobian: ArrayLike,
+    loss_fn: Callable,
+    minimization_function: Callable = scipy_minimize_derivs,
+    num_restarts: Optional[int] = 0,
+    return_history: Optional[bool] = False,
+    opt_kwargs: Dict[str, Any] = None,
+) -> ModelState:
+    """performes one minimization of the loss function and then it applies
+    the randomization function before performing the subsequent optimization.
+    This is repeated for a number of times in range(num_restarts).
+
+    Args:
+        key: JAX PRNGKey
+        state: model state
+        x: observations
+        y: target
+        y_derivs: target derivatives
+        jacobian: jacobian of x
+        minimization_function: loss minimization algorithm (from optimizers).
+                               Default is 'scipy_minimize'. In RBFNet model it
+                               can also be 'optax_minimize'
+        num_restarts: number of restarts after the first optimization
+
+    Returns:
+        state: model state
+        *optres: tuple with optimization results and other possibile outputs
+                 (for example, optax optimizer returns the history of the loss function)
+        states: list of model states at each restart.
+        losses: list of loss values at each restart.
+    """
+    opt_kwargs = {} if opt_kwargs is None else opt_kwargs
+
+    _check_random_key(key=key, num_restarts=num_restarts)
+
+    states = []
+    losses = []
+    opt_info = []
+
+    state, *optres = minimization_function(
+        state=state,
+        x=x,
+        y=y,
+        y_derivs=y_derivs,
+        jacobian=jacobian,
+        loss_fn=loss_fn,
+        **opt_kwargs,
+    )
+    loss = loss_fn(state=state, x=x, y=y, y_derivs=y_derivs, jacobian=jacobian)
+
+    states.append(state)
+    losses.append(loss)
+    opt_info.append(optres)
+
+    for _restart in range(num_restarts):
+        subkey, key = jax.random.split(key)
+        state = state.randomize(key)
+
+        state, *optres = minimization_function(
+            state=state,
+            x=x,
+            y=y,
+            y_derivs=y_derivs,
+            jacobian=jacobian,
+            loss_fn=loss_fn,
+            **opt_kwargs,
+        )
+        loss = loss_fn(
+            state=state,
+            x=x,
+            y=y,
+            y_derivs=y_derivs,
+            jacobian=jacobian,
+        )
+
+        states.append(state)
+        losses.append(loss)
+        opt_info.append(optres)
+
+    idx = losses.index(min(losses))
+    state = states[idx]
+    optres = opt_info[idx]
+
+    if return_history:
+        return state, *optres, states, losses
+    else:
+        return state, *optres

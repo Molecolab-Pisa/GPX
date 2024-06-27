@@ -8,12 +8,18 @@ from jax.typing import ArrayLike
 from typing_extensions import Self
 
 from ..defaults import gpxargs
-from ..optimizers import NLoptWrapper, scipy_minimize, scipy_minimize_derivs
+from ..optimizers import (
+    NLoptWrapper,
+    scipy_minimize,
+    scipy_minimize_derivs,
+    scipy_minimize_ol,
+)
 from ..parameters import ModelState, Parameter
 from .utils import (
     loss_fn_with_args,
     randomized_minimization,
     randomized_minimization_derivs,
+    randomized_minimization_ol,
 )
 
 KeyArray = Array
@@ -216,6 +222,30 @@ class BaseGP:
             x=x,
             full_covariance=full_covariance,
             iterative=iterative,
+        )
+
+    def predict_ol(
+        self,
+        x: ArrayLike,
+        jacobian: ArrayLike,
+        full_covariance: Optional[bool] = False,
+    ) -> Array:
+        """predicts with operator learning gaussian process
+
+        Args:
+            x: observations
+            full_covariance: whether to return the covariance matrix too
+        Returns:
+            μ: predicted mean
+            ∂μ/∂x: predicted derivative
+            C_nn: predicted covariance
+        """
+        self._check_is_fitted()
+        return self._predict_ol_fun(
+            self.state,
+            x=x,
+            jacobian=jacobian,
+            full_covariance=full_covariance,
         )
 
     def log_marginal_likelihood(
@@ -520,6 +550,78 @@ class BaseGP:
             y=y,
             jacobian=jacobian,
             iterative=iterative,
+        )
+
+        if return_history:
+            self.states_history_ = history[0]
+            self.losses_history_ = history[1]
+
+        return self
+
+    def fit_ol(
+        self,
+        x: ArrayLike,
+        y: ArrayLike,
+        jacobian: ArrayLike,
+        y_derivs: ArrayLike,
+        minimize: Optional[bool] = True,
+        num_restarts: Optional[int] = 0,
+        key: Optional[ArrayLike] = None,
+        return_history: Optional[bool] = False,
+    ) -> Self:
+        """fits the model
+
+        Fits the model, optimizing the hyperparameters if requested.
+        The optimization is carried out with scipy's L-BFGS.
+        Multiple restarts with random initializations from the
+        hyperparameter's prior can be performed.
+
+        Args:
+            x: observations
+            y: labels
+            minimize: whether to tune the parameters to optimize the loss
+            num_restarts: number of restarts with randomization to do.
+                          If 0, the model is fitted once without any randomization.
+
+        Notes:
+
+        (1) m(y) is the mean function of the real distribution of data. By default,
+            we don't make assumptions on the mean of the prior distribution, so it
+            is set to the mean value of the input y:
+
+                 μ = (1/n) Σ_i y_i.
+
+        (2) Randomized_minimization requires to optimize the loss.
+            In order to optimize with randomized restarts you need to provide a valid
+            JAX PRNGKey.
+        """
+        if minimize:
+            minimization_function = scipy_minimize_ol
+            self.state, optres, *history = randomized_minimization_ol(
+                key=key,
+                state=self.state,
+                x=x,
+                y=y,
+                jacobian=jacobian,
+                y_derivs=y_derivs,
+                loss_fn=self.state.loss_fn,
+                minimization_function=minimization_function,
+                num_restarts=num_restarts,
+                return_history=return_history,
+            )
+            self.optimize_results_ = optres
+
+            # if the optimization is failed, print a warning
+            if not optres.success:
+                warnings.warn(
+                    "optimization returned with error: {:d}. ({:s})".format(
+                        optres.status, optres.message
+                    ),
+                    stacklevel=2,
+                )
+
+        self.state = self._fit_ol_fun(
+            self.state, x=x, y=y, y_derivs=y_derivs, jacobian=jacobian
         )
 
         if return_history:
