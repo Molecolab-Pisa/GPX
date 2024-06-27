@@ -397,6 +397,8 @@ class BaseGP:
         iterative: Optional[bool] = False,
         loss_kwargs: Optional[Dict] = None,
         opt_kwargs: Optional[Dict] = None,
+        n_pivots: Optional[int] = None,
+        key_precond: Optional[KeyArray] = None
     ) -> Self:
         """fits the model
 
@@ -466,7 +468,7 @@ class BaseGP:
                     stacklevel=2,
                 )
 
-        self.state = self._fit_fun(self.state, x=x, y=y, iterative=iterative)
+        self.state = self._fit_fun(self.state, x=x, y=y, iterative=iterative, n_pivots=n_pivots, key_precond=key_precond)
 
         if return_history:
             self.states_history_ = history[0]
@@ -486,6 +488,8 @@ class BaseGP:
         iterative: Optional[bool] = False,
         loss_kwargs: Optional[Dict] = None,
         opt_kwargs: Optional[Dict] = None,
+        n_pivots: Optional[int] = None,
+        key_precond: Optional[KeyArray] = None
     ) -> Self:
         """fits the model
 
@@ -565,6 +569,8 @@ class BaseGP:
             y=y,
             jacobian=jacobian,
             iterative=iterative,
+            n_pivots=n_pivots,
+            key_precond=key_precond,
         )
 
         if return_history:
