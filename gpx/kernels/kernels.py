@@ -506,6 +506,127 @@ def polynomial_kernel_d01k(
     return _polynomial_kernel_d01k(x1, x2, degree, offset, active_dims)
 
 
+def _polynomial_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _, jv1 = jacobian.shape
+    ns2, _ = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d0kj = jnp.einsum(
+        "nm,fm,nfv->nvm", const, x2.T[active_dims], jacobian[:, active_dims]
+    )
+    return d0kj.reshape(ns1 * jv1, ns2)
+
+
+@jit
+def polynomial_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d0kj(x1, x2, degree, offset, jacobian, active_dims)
+
+
+def _polynomial_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _, jv2 = jacobian.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d1kj = jnp.einsum(
+        "nm,nf,mfv->nmv", const, x1[:, active_dims], jacobian[:, active_dims]
+    )
+    return d1kj.reshape(ns1, ns2 * jv2)
+
+
+@jit
+def polynomial_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d1kj(x1, x2, degree, offset, jacobian, active_dims)
+
+
+def _polynomial_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _, jv1 = jacobian1.shape
+    ns2, _, jv2 = jacobian2.shape
+    nact = active_dims.shape[0]
+    const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    const2 = (
+        degree
+        * (degree - 1)
+        * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (degree - 2)
+    )
+    tmp1 = jnp.einsum(
+        "nm,nfme->nfme",
+        const1,
+        jnp.tile(jnp.eye((nact)), (ns1, ns2)).reshape(ns1, nact, ns2, nact),
+    )
+    tmp2 = jnp.einsum("nf,nm,me->nemf", x1[:, active_dims], const2, x2[:, active_dims])
+    d01kj = jnp.einsum(
+        "nfv,nfme,meu->nvmu",
+        jacobian1[:, active_dims],
+        tmp1 + tmp2,
+        jacobian2[:, active_dims],
+    )
+    return d01kj.reshape(ns1 * jv1, ns2 * jv2)
+
+
+@jit
+def polynomial_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d01kj(
+        x1, x2, degree, offset, jacobian1, jacobian2, active_dims
+    )
+
+
 # =============================================================================
 # No Intercept Polynomial Kernel
 # =============================================================================
@@ -1415,10 +1536,16 @@ class Polynomial(Kernel):
             self.k = partial(no_intercept_polynomial_kernel, active_dims=active_dims)
         else:
             self.k = partial(polynomial_kernel, active_dims=active_dims)
+
         # faster gradients/hessians
         self.d0k = partial(polynomial_kernel_d0k, active_dims=active_dims)
         self.d1k = partial(polynomial_kernel_d1k, active_dims=active_dims)
         self.d01k = partial(polynomial_kernel_d01k, active_dims=active_dims)
+
+        # faster gradients/hessian-jacobian products
+        self.d0kj = partial(polynomial_kernel_d0kj, active_dims=active_dims)
+        self.d1kj = partial(polynomial_kernel_d1kj, active_dims=active_dims)
+        self.d01kj = partial(polynomial_kernel_d01kj, active_dims=active_dims)
 
     def default_params(self):
         return dict(
