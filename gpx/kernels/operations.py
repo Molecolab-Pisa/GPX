@@ -408,18 +408,18 @@ def prod_kernels_deriv01_jaccoef(
           the two kernels.
     """
 
-    def kernel(x1, x2, params, jaccoef, jacobian2, active_dims=None):
+    def kernel(x1, x2, params, jaccoef, jacobian, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
-        _, _, jv2 = jacobian2.shape
+        _, _, jv2 = jacobian.shape
         return (
             kernel_func1(x1, x2, params1).repeat(jv2, axis=-1)
-            * deriv01_func2(x1, x2, params2, jaccoef, jacobian2)
+            * deriv01_func2(x1, x2, params2, jaccoef, jacobian)
             + deriv0_func1(x1, x2, params1, jaccoef).repeat(jv2, axis=-1)
-            * deriv1_func2(x1, x2, params2, jacobian2)
-            + deriv1_func1(x1, x2, params1, jacobian2)
+            * deriv1_func2(x1, x2, params2, jacobian)
+            + deriv1_func1(x1, x2, params1, jacobian)
             * deriv0_func2(x1, x2, params2, jaccoef).repeat(jv2, axis=-1)
-            + deriv01_func1(x1, x2, params1, jaccoef, jacobian2)
+            + deriv01_func1(x1, x2, params1, jaccoef, jacobian)
             * kernel_func2(x1, x2, params2).repeat(jv2, axis=-1)
         )
 
