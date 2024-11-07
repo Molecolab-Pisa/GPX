@@ -18,7 +18,6 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import Array, jit
@@ -178,87 +177,6 @@ def _Kx_derivs1_fun(
     return matvec
 
 
-def _precond_rpcholesky_old(
-    x1: ArrayLike,
-    x2: ArrayLike,
-    params: ParameterDict,
-    kernel: Kernel,
-    n_pivots: int,
-    key: KeyArray,
-) -> Callable[ArrayLike, Array]:
-
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    m, _ = x1.shape
-    n, _ = x2.shape
-
-    fmat, _ = rpcholesky(
-            key=key,
-            x=x1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
-
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
-    Pkk_inv = jnp.linalg.inv(P_kk)
-
-    @jit
-    def matvec(z):
-        @jax.checkpoint
-        def update_row(carry,x1s):
-            Pinv_row = jnp.dot(fmat[carry],Pkk_inv)
-            Pinv_row = - sigma**(-2) * jnp.dot(Pinv_row,fmat.T)
-            Pinv_row = Pinv_row.at[carry].add(sigma**(-2))
-
-            rowvec = jnp.dot(Pinv_row,z) 
-
-            carry = carry + 1
-            return carry, rowvec
-
-        _, res = jax.lax.scan(update_row,0,x1)
-        return res
-    return matvec
-
-def _precond_rpcholesky_new(
-    x1: ArrayLike,
-    x2: ArrayLike,
-    params: ParameterDict,
-    kernel: Kernel,
-    n_pivots: int,
-    key: KeyArray,
-) -> Callable[ArrayLike, Array]:
-
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    m, _ = x1.shape
-    n, _ = x2.shape
-
-    fmat, _ = rpcholesky(
-            key=key,
-            x=x1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
-
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
-    Pkk_inv = jnp.linalg.inv(P_kk)
-
-    @jit
-    def matvec(z):
-        res = jnp.dot(fmat.T,z)
-        res = jnp.dot(P_kk,res)
-        res = - sigma**(-2) * jnp.dot(fmat,res)
-        
-        res = res + sigma**(-2)*z
-        return res
-
-    return matvec
-
-
 def _precond_rpcholesky(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -267,7 +185,6 @@ def _precond_rpcholesky(
     n_pivots: int,
     key: KeyArray,
 ) -> Callable[ArrayLike, Array]:
-
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -275,109 +192,23 @@ def _precond_rpcholesky(
     n, _ = x2.shape
 
     fmat, _ = rpcholesky(
-            key=key,
-            x=x1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
+        key=key, x=x1, n_pivots=n_pivots, kernel=kernel, kernel_params=kernel_params
+    )
 
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
-    L = jsp.linalg.cholesky(P_kk, lower=True)
-    a = jsp.linalg.solve_triangular(L, fmat.T, lower=True)
-
-    diagonal = sigma**(-2)
-    def row_fun(ats):
-        return jnp.expand_dims(- sigma**(-2) * jnp.dot(ats,a), axis=0)
-    
-    matvec = rowfun_to_matvec(row_fun=row_fun, init_val=(a.T), update_diag=True, diag_value=diagonal)
-
-    return matvec
-
-def _precond_rpcholesky_derivs_old(
-    x1: ArrayLike,
-    jacobian1: ArrayLike,
-    x2: ArrayLike,
-    jacobian2: ArrayLike,
-    params: ParameterDict,
-    kernel: Kernel,
-    n_pivots: int,
-    key: KeyArray,
-) -> Callable[ArrayLike, Array]:
-
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    m, _ = x1.shape
-    n, _ = x2.shape
-
-    fmat, _ = rpcholesky_derivs(
-            key=key,
-            x=x1,
-            jacobian=jacobian1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
-
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
+    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat
     P_kk = jnp.linalg.inv(P_kk)
 
     @jit
     def matvec(z):
-        @jax.checkpoint
-        def update_row(carry,x1s):
-            Pinv_row = jnp.dot(fmat[carry],P_kk)
-            Pinv_row = - sigma**(-2) * jnp.dot(Pinv_row,fmat.T)
-            Pinv_row = Pinv_row.at[carry].add(sigma**(-2))
+        res = jnp.dot(fmat.T, z)
+        res = jnp.dot(P_kk, res)
+        res = -(sigma ** (-2)) * jnp.dot(fmat, res)
 
-            rowvec = jnp.dot(Pinv_row,z) 
-
-            carry = carry + 1
-            return carry, rowvec
-
-        _, res = jax.lax.scan(update_row,0,fmat)
+        res = res + sigma ** (-2) * z
         return res
+
     return matvec
 
-def _precond_rpcholesky_derivs_new(
-    x1: ArrayLike,
-    jacobian1: ArrayLike,
-    x2: ArrayLike,
-    jacobian2: ArrayLike,
-    params: ParameterDict,
-    kernel: Kernel,
-    n_pivots: int,
-    key: KeyArray,
-) -> Callable[ArrayLike, Array]:
-
-    kernel_params = params["kernel_params"]
-    sigma = params["sigma"].value
-
-    m, _ = x1.shape
-    n, _ = x2.shape
-
-    fmat, _ = rpcholesky_derivs(
-            key=key,
-            x=x1,
-            jacobian=jacobian1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
-
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
-    P_kk = jnp.linalg.inv(P_kk)
-
-    @jit
-    def matvec(z):
-        res = jnp.dot(fmat.T,z)
-        res = jnp.dot(P_kk,res)
-        res = - sigma**(-2) * jnp.dot(fmat,res)
-        
-        res = res + sigma**(-2)*z
-        return res
-    return matvec
 
 def _precond_rpcholesky_derivs(
     x1: ArrayLike,
@@ -389,7 +220,6 @@ def _precond_rpcholesky_derivs(
     n_pivots: int,
     key: KeyArray,
 ) -> Callable[ArrayLike, Array]:
-
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
@@ -397,24 +227,28 @@ def _precond_rpcholesky_derivs(
     n, _ = x2.shape
 
     fmat, _ = rpcholesky_derivs(
-            key=key,
-            x=x1,
-            jacobian=jacobian1,
-            n_pivots=n_pivots,
-            kernel=kernel,
-            kernel_params=kernel_params
-            )
+        key=key,
+        x=x1,
+        jacobian=jacobian1,
+        n_pivots=n_pivots,
+        kernel=kernel,
+        kernel_params=kernel_params,
+    )
 
-    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat 
-    L = jsp.linalg.cholesky(P_kk, lower=True)
-    a = jsp.linalg.solve_triangular(L, fmat.T, lower=True)
+    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat
+    P_kk = jnp.linalg.inv(P_kk)
 
-    diagonal = sigma**(-2)
-    def row_fun(ats):
-        return jnp.expand_dims(- sigma**(-2) * jnp.dot(ats,a), axis=0)
-    
-    matvec = rowfun_to_matvec(row_fun=row_fun, init_val=(a.T), update_diag=True, diag_value=diagonal)
+    @jit
+    def matvec(z):
+        res = jnp.dot(fmat.T, z)
+        res = jnp.dot(P_kk, res)
+        res = -(sigma ** (-2)) * jnp.dot(fmat, res)
+
+        res = res + sigma ** (-2) * z
+        return res
+
     return matvec
+
 
 # Functions to fit a GPR
 
@@ -463,8 +297,10 @@ def _fit_iter(
     mu = mean_function(y)
     y = y - mu
     matvec = _Ax_lhs_fun(x1=x, x2=x, params=params, kernel=kernel, noise=True)
-    precond = _precond_rpcholesky_new(x1=x, x2=x, params=params, kernel=kernel, n_pivots=n_pivots, key=key_precond)
-    c, _ = cg(matvec, y, M=precond)
+    precond = _precond_rpcholesky(
+        x1=x, x2=x, params=params, kernel=kernel, n_pivots=n_pivots, key=key_precond
+    )
+    c, _ = cg(matvec, y, M=precond, atol=1e-7)
     return c, mu
 
 
@@ -534,8 +370,17 @@ def _fit_derivs_iter(
         kernel=kernel,
         noise=True,
     )
-    precond = _precond_rpcholesky_derivs_new(x1=x, jacobian1=jacobian, x2=x, jacobian2=jacobian, params=params, kernel=kernel, n_pivots=n_pivots, key=key_precond)
-    c, _ = cg(matvec, y, M=precond)
+    precond = _precond_rpcholesky_derivs(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        n_pivots=n_pivots,
+        key=key_precond,
+    )
+    c, _ = cg(matvec, y, M=precond, atol=1e-7)
     return c, mu
 
 
