@@ -24,6 +24,7 @@ from jax import Array, jit
 from jax.scipy.sparse.linalg import cg
 from jax.typing import ArrayLike
 
+from ..kernels.approximations import rpcholesky, rpcholesky_derivs
 from ..lanczos import lanczos_logdet
 from ..operations import rowfun_to_matvec
 from ..parameters import Parameter
@@ -176,6 +177,79 @@ def _Kx_derivs1_fun(
     return matvec
 
 
+def _precond_rpcholesky(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: ParameterDict,
+    kernel: Kernel,
+    n_pivots: int,
+    key: KeyArray,
+) -> Callable[ArrayLike, Array]:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+
+    m, _ = x1.shape
+    n, _ = x2.shape
+
+    fmat, _ = rpcholesky(
+        key=key, x=x1, n_pivots=n_pivots, kernel=kernel, kernel_params=kernel_params
+    )
+
+    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat
+    P_kk = jnp.linalg.inv(P_kk)
+
+    @jit
+    def matvec(z):
+        res = jnp.dot(fmat.T, z)
+        res = jnp.dot(P_kk, res)
+        res = -(sigma ** (-2)) * jnp.dot(fmat, res)
+
+        res = res + sigma ** (-2) * z
+        return res
+
+    return matvec
+
+
+def _precond_rpcholesky_derivs(
+    x1: ArrayLike,
+    jacobian1: ArrayLike,
+    x2: ArrayLike,
+    jacobian2: ArrayLike,
+    params: ParameterDict,
+    kernel: Kernel,
+    n_pivots: int,
+    key: KeyArray,
+) -> Callable[ArrayLike, Array]:
+    kernel_params = params["kernel_params"]
+    sigma = params["sigma"].value
+
+    m, _ = x1.shape
+    n, _ = x2.shape
+
+    fmat, _ = rpcholesky_derivs(
+        key=key,
+        x=x1,
+        jacobian=jacobian1,
+        n_pivots=n_pivots,
+        kernel=kernel,
+        kernel_params=kernel_params,
+    )
+
+    P_kk = sigma**2 * jnp.eye(n_pivots) + fmat.T @ fmat
+    P_kk = jnp.linalg.inv(P_kk)
+
+    @jit
+    def matvec(z):
+        res = jnp.dot(fmat.T, z)
+        res = jnp.dot(P_kk, res)
+        res = -(sigma ** (-2)) * jnp.dot(fmat, res)
+
+        res = res + sigma ** (-2) * z
+        return res
+
+    return matvec
+
+
 # Functions to fit a GPR
 
 
@@ -202,13 +276,15 @@ def _fit_dense(
     return c, mu
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(3, 4, 5))
 def _fit_iter(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
+    n_pivots: int,
+    key_precond: KeyArray,
 ) -> Tuple[Array, Array]:
     """fits a standard GPR iteratively
 
@@ -221,7 +297,10 @@ def _fit_iter(
     mu = mean_function(y)
     y = y - mu
     matvec = _Ax_lhs_fun(x1=x, x2=x, params=params, kernel=kernel, noise=True)
-    c, _ = cg(matvec, y)
+    precond = _precond_rpcholesky(
+        x1=x, x2=x, params=params, kernel=kernel, n_pivots=n_pivots, key=key_precond
+    )
+    c, _ = cg(matvec, y, M=precond, atol=1e-7)
     return c, mu
 
 
@@ -259,7 +338,7 @@ def _fit_derivs_dense(
     return c, mu
 
 
-@partial(jit, static_argnums=(4, 5))
+@partial(jit, static_argnums=(4, 5, 6))
 def _fit_derivs_iter(
     params: ParameterDict,
     x: ArrayLike,
@@ -267,6 +346,8 @@ def _fit_derivs_iter(
     y: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
+    n_pivots: int,
+    key_precond: KeyArray,
 ) -> Tuple[Array, Array]:
     """fits a standard GPR iteratively when training on derivatives
 
@@ -289,7 +370,17 @@ def _fit_derivs_iter(
         kernel=kernel,
         noise=True,
     )
-    c, _ = cg(matvec, y)
+    precond = _precond_rpcholesky_derivs(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        n_pivots=n_pivots,
+        key=key_precond,
+    )
+    c, _ = cg(matvec, y, M=precond, atol=1e-7)
     return c, mu
 
 

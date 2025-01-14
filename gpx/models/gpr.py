@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
+from functools import partial
 from typing import Callable, Dict, Optional
 
 import jax
@@ -358,7 +359,12 @@ def mse_loss(
 
 
 def fit(
-    state: ModelState, x: ArrayLike, y: ArrayLike, iterative: Optional[bool] = False
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    iterative: Optional[bool] = False,
+    n_pivots: Optional[int] = None,
+    key_precond: Optional[KeyArray] = None,
 ) -> ModelState:
     """fits a standard gaussian process
 
@@ -374,7 +380,11 @@ def fit(
     Returns:
         state: fitted model state
     """
-    fit_func = _fit_iter if iterative else _fit_dense
+    fit_func = (
+        partial(_fit_iter, n_pivots=n_pivots, key_precond=key_precond)
+        if iterative
+        else _fit_dense
+    )
     c, mu = fit_func(
         params=state.params,
         x=x,
@@ -394,6 +404,8 @@ def fit_derivs(
     y: ArrayLike,
     jacobian: ArrayLike,
     iterative: Optional[bool] = False,
+    n_pivots: Optional[int] = None,
+    key_precond: Optional[KeyArray] = None,
 ) -> ModelState:
     """fits a standard gaussian process
 
@@ -410,7 +422,11 @@ def fit_derivs(
     Returns:
         state: fitted model state
     """
-    fit_func = _fit_derivs_iter if iterative else _fit_derivs_dense
+    fit_func = (
+        partial(_fit_derivs_iter, n_pivots=n_pivots, key_precond=key_precond)
+        if iterative
+        else _fit_derivs_dense
+    )
     c, mu = fit_func(
         params=state.params,
         x=x,
