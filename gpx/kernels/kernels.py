@@ -407,6 +407,279 @@ def polynomial_kernel(
     return _polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset)
 
 
+def _polynomial_kernel_d0k(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, _ = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d0k = jnp.zeros((ns1, nf1, ns2), dtype=jnp.float64)
+    d0k = d0k.at[:, active_dims].set(jnp.einsum("nm,fm->nfm", const, x2.T[active_dims]))
+    return d0k.reshape(ns1 * nf1, ns2)
+
+
+@jit
+def polynomial_kernel_d0k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d0k(x1, x2, degree, offset, active_dims)
+
+
+def _polynomial_kernel_d1k(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, nf2 = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d1k = jnp.zeros((ns1, ns2, nf2), dtype=jnp.float64)
+    d1k = d1k.at[:, :, active_dims].set(
+        jnp.einsum("nm,nf->nmf", const, x1[:, active_dims])
+    )
+    return d1k.reshape(ns1, ns2 * nf2)
+
+
+@jit
+def polynomial_kernel_d1k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d1k(x1, x2, degree, offset, active_dims)
+
+
+def _polynomial_kernel_d01k(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, nf2 = x2.shape
+    nact = active_dims.shape[0]
+    const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    const2 = (
+        degree
+        * (degree - 1)
+        * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (degree - 2)
+    )
+    tmp1 = jnp.einsum(
+        "nm,nfme->nmfe",
+        const1,
+        jnp.tile(jnp.eye((nact)), (ns1, ns2)).reshape(ns1, nact, ns2, nact),
+    )
+    tmp2 = jnp.einsum("nf,nm,me->nmfe", x1[:, active_dims], const2, x2[:, active_dims])
+    d01k = jnp.zeros((ns1, ns2, nf1, nf2), dtype=jnp.float64)
+    ii, jj = jnp.meshgrid(active_dims, active_dims)
+    d01k = d01k.at[:, :, ii, jj].set(tmp1 + tmp2)
+    return jnp.swapaxes(d01k, axis1=1, axis2=2).reshape(ns1 * nf1, ns2 * nf2)
+
+
+@jit
+def polynomial_kernel_d01k(
+    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d01k(x1, x2, degree, offset, active_dims)
+
+
+def _polynomial_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _, nv1 = jacobian.shape
+    ns2, _ = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d0kj = jnp.einsum(
+        "nm,fm,nfv->nvm", const, x2.T[active_dims], jacobian[:, active_dims]
+    )
+    return d0kj.reshape(ns1 * nv1, ns2)
+
+
+@jit
+def polynomial_kernel_d0kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d0kj(x1, x2, degree, offset, jacobian, active_dims)
+
+
+def _polynomial_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _, nv2 = jacobian.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d1kj = jnp.einsum(
+        "nm,nf,mfv->nmv", const, x1[:, active_dims], jacobian[:, active_dims]
+    )
+    return d1kj.reshape(ns1, ns2 * nv2)
+
+
+@jit
+def polynomial_kernel_d1kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d1kj(x1, x2, degree, offset, jacobian, active_dims)
+
+
+def _polynomial_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _, nv1 = jacobian1.shape
+    ns2, _, nv2 = jacobian2.shape
+    nact = active_dims.shape[0]
+    const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    const2 = (
+        degree
+        * (degree - 1)
+        * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (degree - 2)
+    )
+    tmp1 = jnp.einsum(
+        "nm,nfme->nfme",
+        const1,
+        jnp.tile(jnp.eye((nact)), (ns1, ns2)).reshape(ns1, nact, ns2, nact),
+    )
+    tmp2 = jnp.einsum("nf,nm,me->nemf", x1[:, active_dims], const2, x2[:, active_dims])
+    d01kj = jnp.einsum(
+        "nfv,nfme,meu->nvmu",
+        jacobian1[:, active_dims],
+        tmp1 + tmp2,
+        jacobian2[:, active_dims],
+    )
+    return d01kj.reshape(ns1 * nv1, ns2 * nv2)
+
+
+@jit
+def polynomial_kernel_d01kj(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jacobian1: ArrayLike,
+    jacobian2: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d01kj(
+        x1, x2, degree, offset, jacobian1, jacobian2, active_dims
+    )
+
+
+def _polynomial_kernel_d01kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = x1.shape
+    ns2, _, nv2 = jacobian.shape
+    nact = active_dims.shape[0]
+    const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    const2 = (
+        degree
+        * (degree - 1)
+        * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (degree - 2)
+    )
+    tmp1 = jnp.einsum(
+        "nm,nfme->nfme",
+        const1,
+        jnp.tile(jnp.eye((nact)), (ns1, ns2)).reshape(ns1, nact, ns2, nact),
+    )
+    tmp2 = jnp.einsum("nf,nm,me->nemf", x1[:, active_dims], const2, x2[:, active_dims])
+    d01kjc = jnp.einsum(
+        "nf,nfme,meu->nmu",
+        jaccoef[:, active_dims],
+        tmp1 + tmp2,
+        jacobian[:, active_dims],
+    )
+    return d01kjc.reshape(ns1, ns2 * nv2)
+
+
+@jit
+def polynomial_kernel_d01kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims=None,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d01kjc(
+        x1, x2, degree, offset, jaccoef, jacobian, active_dims
+    )
+
+
 # =============================================================================
 # No Intercept Polynomial Kernel
 # =============================================================================
@@ -1316,6 +1589,19 @@ class Polynomial(Kernel):
             self.k = partial(no_intercept_polynomial_kernel, active_dims=active_dims)
         else:
             self.k = partial(polynomial_kernel, active_dims=active_dims)
+
+        # faster gradients/hessians
+        self.d0k = partial(polynomial_kernel_d0k, active_dims=active_dims)
+        self.d1k = partial(polynomial_kernel_d1k, active_dims=active_dims)
+        self.d01k = partial(polynomial_kernel_d01k, active_dims=active_dims)
+
+        # faster gradients/hessian-jacobian products
+        self.d0kj = partial(polynomial_kernel_d0kj, active_dims=active_dims)
+        self.d1kj = partial(polynomial_kernel_d1kj, active_dims=active_dims)
+        self.d01kj = partial(polynomial_kernel_d01kj, active_dims=active_dims)
+
+        # faster hessian-jaccoef
+        self.d01kjc = partial(polynomial_kernel_d01kjc, active_dims=active_dims)
 
     def default_params(self):
         return dict(
