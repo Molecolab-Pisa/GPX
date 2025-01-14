@@ -271,7 +271,7 @@ class BaseGP:
         iterative: Optional[bool] = False,
         num_evals: Optional[int] = gpxargs.num_evals,
         num_lanczos: Optional[int] = gpxargs.num_lanczos,
-        lanczos_key: Optional[ArrayLike] = gpxargs.lanczos_key,
+        key_lanczos: Optional[ArrayLike] = gpxargs.key_lanczos,
     ) -> Array:
         """Computes the log marginal likelihood.
 
@@ -285,7 +285,7 @@ class BaseGP:
                        log|K| (used only if iterative=True)
             num_lanczos: number of Lanczos evaluations for estimating
                          log|K| (used only if iterative=True)
-            lanczos_key: random key for Lanczos tridiagonalization
+            key_lanczos: random key for Lanczos tridiagonalization
         """
         lml = self._lml_fun(
             self.state,
@@ -294,7 +294,7 @@ class BaseGP:
             iterative=iterative,
             num_evals=num_evals,
             num_lanczos=num_lanczos,
-            lanczos_key=lanczos_key,
+            key_lanczos=key_lanczos,
         )
 
         if return_negative:
@@ -310,7 +310,7 @@ class BaseGP:
         iterative: Optional[bool] = False,
         num_evals: Optional[int] = gpxargs.num_evals,
         num_lanczos: Optional[int] = gpxargs.num_lanczos,
-        lanczos_key: Optional[ArrayLike] = gpxargs.lanczos_key,
+        key_lanczos: Optional[ArrayLike] = gpxargs.key_lanczos,
     ) -> Array:
         """Computes the log marginal likelihood using the hessian kernel.
 
@@ -325,7 +325,7 @@ class BaseGP:
                        log|K| (used only if iterative=True)
             num_lanczos: number of Lanczos evaluations for estimating
                          log|K| (used only if iterative=True)
-            lanczos_key: random key for Lanczos tridiagonalization
+            key_lanczos: random key for Lanczos tridiagonalization
         """
         lml = self._lml_derivs_fun(
             self.state,
@@ -335,7 +335,7 @@ class BaseGP:
             iterative=iterative,
             num_evals=num_evals,
             num_lanczos=num_lanczos,
-            lanczos_key=lanczos_key,
+            key_lanczos=key_lanczos,
         )
 
         if return_negative:
@@ -398,7 +398,6 @@ class BaseGP:
         loss_kwargs: Optional[Dict] = None,
         opt_kwargs: Optional[Dict] = None,
         n_pivots: Optional[int] = None,
-        key_precond: Optional[KeyArray] = None,
     ) -> Self:
         """fits the model
 
@@ -442,6 +441,8 @@ class BaseGP:
         if loss_kwargs is None:
             loss_kwargs = {}
         loss_kwargs["iterative"] = iterative
+        loss_kwargs["n_pivots"] = n_pivots
+        loss_kwargs["key_precond"] = gpxargs.key_precond
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
 
         if minimize:
@@ -474,7 +475,7 @@ class BaseGP:
             y=y,
             iterative=iterative,
             n_pivots=n_pivots,
-            key_precond=key_precond,
+            key_precond=gpxargs.key_precond,
         )
 
         if return_history:
@@ -496,7 +497,6 @@ class BaseGP:
         loss_kwargs: Optional[Dict] = None,
         opt_kwargs: Optional[Dict] = None,
         n_pivots: Optional[int] = None,
-        key_precond: Optional[KeyArray] = None,
     ) -> Self:
         """fits the model
 
@@ -543,6 +543,8 @@ class BaseGP:
         if loss_kwargs is None:
             loss_kwargs = {}
         loss_kwargs["iterative"] = iterative
+        loss_kwargs["n_pivots"] = n_pivots
+        loss_kwargs["key_precond"] = gpxargs.key_precond
         loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
 
         if minimize:
@@ -577,7 +579,7 @@ class BaseGP:
             jacobian=jacobian,
             iterative=iterative,
             n_pivots=n_pivots,
-            key_precond=key_precond,
+            key_precond=gpxargs.key_precond,
         )
 
         if return_history:

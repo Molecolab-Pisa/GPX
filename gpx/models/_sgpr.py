@@ -707,7 +707,7 @@ def _lml_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -728,7 +728,7 @@ def _lml_iter(
         num_evals=int(num_evals),
         dim_mat=int(n),
         num_lanczos=int(num_lanczos),
-        key=lanczos_key,
+        key=key_lanczos,
     )
     mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
 
@@ -796,7 +796,7 @@ def _lml_derivs_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -820,7 +820,7 @@ def _lml_derivs_iter(
         num_evals=int(num_evals),
         dim_mat=int(n),
         num_lanczos=int(num_lanczos),
-        key=lanczos_key,
+        key=key_lanczos,
     )
     mll -= n * 0.5 * jnp.log(2.0 * jnp.pi)
 

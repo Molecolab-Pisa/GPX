@@ -67,7 +67,7 @@ def log_marginal_likelihood(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -93,7 +93,7 @@ def log_marginal_likelihood(
             mean_function=state.mean_function,
             num_evals=num_evals,
             num_lanczos=num_lanczos,
-            lanczos_key=lanczos_key,
+            key_lanczos=key_lanczos,
         )
     return _lml_dense(
         params=state.params,
@@ -114,7 +114,7 @@ def log_marginal_likelihood_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -142,7 +142,7 @@ def log_marginal_likelihood_derivs(
             mean_function=zero_mean,
             num_evals=num_evals,
             num_lanczos=num_lanczos,
-            lanczos_key=lanczos_key,
+            key_lanczos=key_lanczos,
         )
     return _lml_derivs_dense(
         params=state.params,
@@ -173,7 +173,7 @@ def log_posterior(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     """Computes the log posterior
 
@@ -200,7 +200,7 @@ def log_posterior_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     """Computes the log posterior
 
@@ -217,7 +217,7 @@ def log_posterior_derivs(
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     ) + log_prior(state=state)
 
 
@@ -228,7 +228,7 @@ def neg_log_marginal_likelihood(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood(
@@ -238,7 +238,7 @@ def neg_log_marginal_likelihood(
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )
 
 
@@ -250,7 +250,7 @@ def neg_log_marginal_likelihood_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     "Returns the negative log marginal likelihood"
     return -log_marginal_likelihood_derivs(
@@ -261,7 +261,7 @@ def neg_log_marginal_likelihood_derivs(
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )
 
 
@@ -272,7 +272,7 @@ def neg_log_posterior(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior(
@@ -282,7 +282,7 @@ def neg_log_posterior(
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )
 
 
@@ -294,7 +294,7 @@ def neg_log_posterior_derivs(
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
-    lanczos_key: Optional[KeyArray] = gpxargs.lanczos_key,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
 ) -> Array:
     "Returns the negative log posterior"
     return -log_posterior_derivs(
@@ -305,7 +305,7 @@ def neg_log_posterior_derivs(
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )
 
 

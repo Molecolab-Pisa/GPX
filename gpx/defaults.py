@@ -23,7 +23,9 @@ GPX_DEFAULTS = {
     # number of lanczos evaluations
     "num_lanczos": 8,
     # default "random" key for lanczos
-    "lanczos_key": jax.random.PRNGKey(2023),
+    "key_lanczos": jax.random.PRNGKey(2023),
+    # default "random" key for preconditioner
+    "key_precond": jax.random.PRNGKey(2023),
 }
 
 # using a namedtuple to have immutable defaults
