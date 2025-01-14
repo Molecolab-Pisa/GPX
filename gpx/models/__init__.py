@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from .gpr import GPR
+from .gpr_td import GPR_TD
 from .rbfnet import RBFNet
 from .sgpr import SGPR
 from .sgpr_rpchol import SGPR_RPChol

@@ -19,21 +19,20 @@ import warnings
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
-import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
-from jax import Array, grad, jit, lax, random, value_and_grad
+from jax import Array, jit, lax, random
 from jax.scipy.sparse.linalg import cg
 from jax.typing import ArrayLike
-from scipy.optimize import minimize
-from scipy.optimize._optimize import OptimizeResult
 
+from ..defaults import gpxargs
+from ..lanczos import lanczos_logdet
 from ..mean_functions import zero_mean
 from ..operations import recover_first_axis, update_row_diagonal
-from ..optimizers.utils import ravel_backward_trainables, unravel_forward_trainables
+from ..optimizers.scipy_optimize import scipy_minimize_ol
 from ..parameters import ModelState, Parameter
-from .utils import randomized_minimization_ol
+from .utils import loss_fn_with_args, randomized_minimization_ol
 
 ParameterDict = Dict[str, Parameter]
 Kernel = Any
@@ -228,44 +227,388 @@ def _precond_rpcholesky_TD(
     return matvec
 
 
-def scipy_minimize_TD(
+@partial(jit, static_argnums=(5, 6))
+def _lml_dense(
+    params: ParameterDict,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+) -> Array:
+    kernel_params = params["kernel_params"]
+    sigma_targets = params["sigma_targets"].value
+    sigma_derivs = params["sigma_derivs"].value
+
+    mu = mean_function(y)
+    y = y - mu
+    y = y.reshape(-1, 1)
+    y_derivs = y_derivs.reshape(-1, 1)
+    y_m = jnp.concatenate((y, y_derivs))
+    m = y_m.shape[0]
+
+    # build kernel with target and derivatives
+    K = kernel(x1=x, x2=x, params=kernel_params)
+    K = K + sigma_targets**2 * jnp.eye(K.shape[0])
+
+    D01kj = kernel.d01kj(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=kernel_params,
+    )
+    D01kj = D01kj + sigma_derivs**2 * jnp.eye(D01kj.shape[0])
+
+    D0kj = kernel.d0kj(
+        x1=x,
+        x2=x,
+        params=kernel_params,
+        jacobian=jacobian,
+    )
+
+    C_mm = jnp.concatenate(
+        (
+            jnp.concatenate((K, D0kj.T), axis=1),
+            jnp.concatenate((D0kj, D01kj), axis=1),
+        ),
+        axis=0,
+    )
+
+    L_m = jsp.linalg.cholesky(C_mm, lower=True)
+    cy = jsp.linalg.solve_triangular(L_m, y_m, lower=True)
+
+    mll = -0.5 * jnp.sum(jnp.square(cy))
+    mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
+    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
+
+    # normalize by the number of samples
+    mll = mll / m
+
+    return mll
+
+
+@partial(jit, static_argnums=(5, 6, 7, 8, 10))
+def _lml_iter(
+    params: ParameterDict,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+    num_evals: int,
+    num_lanczos: int,
+    key_lanczos: KeyArray,
+    n_pivots: int,
+    key_precond: KeyArray,
+):
+    c, mu = _fit_iter(
+        params=params,
+        x=x,
+        jacobian=jacobian,
+        y=y,
+        y_derivs=y_derivs,
+        kernel=kernel,
+        mean_function=mean_function,
+        n_pivots=n_pivots,
+        key_precond=key_precond,
+    )
+    y = y - mu
+    y = y.reshape(-1, 1)
+    y_derivs = y_derivs.reshape(-1, 1)
+    y_m = jnp.concatenate((y, y_derivs))
+    m = y_m.shape[0]
+
+    matvec = _Ax_lhs_fun(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        noise=True,
+    )
+
+    mll = -0.5 * jnp.sum(jnp.dot(y_m.T, c))
+    mll -= 0.5 * lanczos_logdet(
+        matvec,
+        num_evals=int(num_evals),
+        dim_mat=int(m),
+        num_lanczos=int(num_lanczos),
+        key=key_lanczos,
+    )
+    mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
+
+    # normalize by the number of samples
+    mll = mll / m
+
+    return mll
+
+
+@partial(jit, static_argnums=(5, 6))
+def _fit_dense(
+    params: ParameterDict,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+) -> Tuple[Array, Array]:
+
+    kernel_params = params["kernel_params"]
+    sigma_targets = params["sigma_targets"].value
+    sigma_derivs = params["sigma_derivs"].value
+
+    mu = mean_function(y)
+    y = y - mu
+    y = y.reshape(-1, 1)
+    y_derivs = y_derivs.reshape(-1, 1)
+    y_m = jnp.concatenate((y, y_derivs))
+
+    # build kernel with target and derivatives
+    K = kernel(x1=x, x2=x, params=kernel_params)
+    K = K + (sigma_targets**2 + 1e-10) * jnp.eye(K.shape[0])
+
+    D01kj = kernel.d01kj(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=kernel_params,
+    )
+    D01kj = D01kj + (sigma_derivs**2 + 1e-10) * jnp.eye(D01kj.shape[0])
+
+    D0kj = kernel.d0kj(
+        x1=x,
+        x2=x,
+        params=kernel_params,
+        jacobian=jacobian,
+    )
+
+    C_mm = jnp.concatenate(
+        (
+            jnp.concatenate((K, D0kj.T), axis=1),
+            jnp.concatenate((D0kj, D01kj), axis=1),
+        ),
+        axis=0,
+    )
+    c = jnp.linalg.solve(C_mm, y_m)
+    return c, mu
+
+
+@partial(jit, static_argnums=(5, 6, 7))
+def _fit_iter(
+    params: ParameterDict,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    kernel: Kernel,
+    mean_function: Callable[ArrayLike, Array],
+    n_pivots: int,
+    key_precond: KeyArray,
+) -> Tuple[Array, Array]:
+    # calculate mean and flatten y_derivs
+    mu = mean_function(y)
+    y = y - mu
+    y = y.reshape(-1, 1)
+    y_derivs = y_derivs.reshape(-1, 1)
+    y_m = jnp.concatenate((y, y_derivs))
+
+    matvec = _Ax_lhs_fun(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        noise=True,
+    )
+
+    precond = _precond_rpcholesky_TD(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x,
+        jacobian2=jacobian,
+        params=params,
+        kernel=kernel,
+        n_pivots=n_pivots,
+        key=key_precond,
+    )
+
+    c, _ = cg(matvec, y_m, M=precond, atol=1e-7)
+
+    return c, mu
+
+
+@partial(jit, static_argnums=(7))
+def _predict_dense(
+    params: ParameterDict,
+    x_train: ArrayLike,
+    jacobian_train: ArrayLike,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Kernel,
+) -> Union[Array, Tuple[Array, Array]]:
+
+    kernel_params = params["kernel_params"]
+
+    K = kernel(x1=x_train, x2=x, params=kernel_params)
+
+    D01kj = kernel.d01kj(
+        x1=x_train,
+        jacobian1=jacobian_train,
+        x2=x,
+        jacobian2=jacobian,
+        params=kernel_params,
+    )
+
+    D0kj = kernel.d0kj(
+        x1=x_train,
+        x2=x,
+        params=kernel_params,
+        jacobian=jacobian_train,
+    )
+
+    D1kj = kernel.d1kj(
+        x1=x_train,
+        x2=x,
+        params=kernel_params,
+        jacobian=jacobian,
+    )
+
+    K_mn = jnp.concatenate(
+        (
+            jnp.concatenate((K, D1kj), axis=1),
+            jnp.concatenate((D0kj, D01kj), axis=1),
+        ),
+        axis=0,
+    )
+
+    pred = jnp.dot(K_mn.T, c)
+
+    ns, _, nv = jacobian.shape
+
+    pred = pred.at[:ns, :].add(mu)
+    y_pred = pred[:ns]
+    y_derivs_pred = pred[ns : ns + nv * ns].reshape(ns, -1)
+
+    return y_pred, y_derivs_pred
+
+
+@partial(jit, static_argnums=(7))
+def _predict_iter(
+    params: ParameterDict,
+    x_train: ArrayLike,
+    jacobian_train: ArrayLike,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    c: ArrayLike,
+    mu: ArrayLike,
+    kernel: Kernel,
+):
+    """predicts derivative values with GPR
+
+    Predicts the derivative values with GPR.
+    The contraction with the linear coefficients is performed
+    iteratively.
+
+    μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
+
+    where K = ∂₁∂₂K
+    """
+    matvec = _Ax_lhs_fun(
+        x1=x,
+        jacobian1=jacobian,
+        x2=x_train,
+        jacobian2=jacobian_train,
+        params=params,
+        kernel=kernel,
+        noise=False,
+    )
+    pred = matvec(c)
+    # recover the right shape
+    ns, _ = x.shape
+
+    pred = pred.at[:ns, :].add(mu)
+    y_pred = pred[:ns]
+    y_derivs_pred = pred[ns:].reshape(ns, -1)
+    return y_pred, y_derivs_pred
+
+
+def log_marginal_likelihood(
     state: ModelState,
     x: ArrayLike,
     y: ArrayLike,
-    y_derivs: ArrayLike,
     jacobian: ArrayLike,
-    loss_fn: Callable,
-    callback: Optional[Callable] = None,
-) -> Tuple[ModelState, OptimizeResult]:
-
-    # x0: flattened trainables (1D) in unbound space
-    # tdef: definition of trainables tree (non-trainables are None)
-    # unravel_fn: callable to unflatten x0
-    x0, tdef, unravel_fn = ravel_backward_trainables(state.params)
-
-    # function to unravel and unflatten trainables and go in bound space
-    unravel_forward = unravel_forward_trainables(unravel_fn, tdef, state.params)
-
-    def loss(xt):
-        # go in bound space and reconstruct params
-        params = unravel_forward(xt)
-        ustate = state.update(dict(params=params))
-        return loss_fn(state=ustate, x=x, y=y, y_derivs=y_derivs, jacobian=jacobian)
-
-    loss_and_grad = jit(value_and_grad(loss))
-    jax.debug.print("{z}", z=jit(grad(loss))(x0))
-
-    optres = minimize(
-        loss_and_grad, x0=x0, method="L-BFGS-B", jac=True, callback=callback
+    y_derivs: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
+    n_pivots: Optional[int] = None,
+    key_precond: Optional[KeyArray] = None,
+) -> Array:
+    if iterative:
+        return _lml_iter(
+            params=state.params,
+            x=x,
+            y=y,
+            jacobian=jacobian,
+            y_derivs=y_derivs,
+            kernel=state.kernel,
+            mean_function=state.mean_function,
+            num_evals=num_evals,
+            num_lanczos=num_lanczos,
+            key_lanczos=key_lanczos,
+            n_pivots=n_pivots,
+            key_precond=key_precond,
+        )
+    return _lml_dense(
+        params=state.params,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        y_derivs=y_derivs,
+        kernel=state.kernel,
+        mean_function=state.mean_function,
     )
 
-    params = unravel_forward(optres.x)
-    state = state.update(dict(params=params))
 
-    return state, optres
+def neg_log_marginal_likelihood(
+    state: ModelState,
+    x: ArrayLike,
+    y: ArrayLike,
+    jacobian: ArrayLike,
+    y_derivs: ArrayLike,
+    iterative: Optional[bool] = False,
+    num_evals: Optional[int] = gpxargs.num_evals,
+    num_lanczos: Optional[int] = gpxargs.num_lanczos,
+    key_lanczos: Optional[KeyArray] = gpxargs.key_lanczos,
+    n_pivots: Optional[int] = None,
+    key_precond: Optional[KeyArray] = None,
+) -> Array:
+    return -log_marginal_likelihood(
+        state=state,
+        x=x,
+        y=y,
+        jacobian=jacobian,
+        y_derivs=y_derivs,
+        iterative=iterative,
+        num_evals=num_evals,
+        num_lanczos=num_lanczos,
+        key_lanczos=key_lanczos,
+        n_pivots=n_pivots,
+        key_precond=key_precond,
+    )
 
 
-class TargetsDerivs:
+class GPR_TD:
     def __init__(
         self,
         kernel: Kernel,
@@ -273,6 +616,7 @@ class TargetsDerivs:
         kernel_params: Dict[str, Parameter] = None,
         sigma_targets: Parameter = None,
         sigma_derivs: Parameter = None,
+        loss_fn: Callable = neg_log_marginal_likelihood,
     ) -> None:
 
         params = {
@@ -292,226 +636,41 @@ class TargetsDerivs:
             "mu": None,
         }
 
-        self.state = ModelState(kernel, mean_function, params, **opt)
-
-    @partial(jit, static_argnums=(0, 6, 7))
-    def _lml_dense(
-        self,
-        params: ParameterDict,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        y: ArrayLike,
-        y_derivs: ArrayLike,
-        kernel: Kernel,
-        mean_function: Callable[ArrayLike, Array],
-    ) -> Array:
-        m = y.shape[0]
-        kernel_params = params["kernel_params"]
-        sigma_targets = params["sigma_targets"].value
-        sigma_derivs = params["sigma_derivs"].value
-
-        mu = mean_function(y)
-        y = y - mu
-        y = y.reshape(-1, 1)
-        y_derivs = y_derivs.reshape(-1, 1)
-        y_m = jnp.concatenate((y, y_derivs))
-
-        # build kernel with target and derivatives
-        K = kernel(x1=x, x2=x, params=kernel_params)
-        K = K + sigma_targets**2 * jnp.eye(K.shape[0])
-
-        D01kj = kernel.d01kj(
-            x1=x,
-            jacobian1=jacobian,
-            x2=x,
-            jacobian2=jacobian,
-            params=kernel_params,
-        )
-        D01kj = D01kj + sigma_derivs**2 * jnp.eye(D01kj.shape[0])
-
-        D0kj = kernel.d0kj(
-            x1=x,
-            x2=x,
-            params=kernel_params,
-            jacobian=jacobian,
-        )
-
-        C_mm = jnp.concatenate(
-            (
-                jnp.concatenate((K, D0kj.T), axis=1),
-                jnp.concatenate((D0kj, D01kj), axis=1),
-            ),
-            axis=0,
-        )
-
-        L_m = jsp.linalg.cholesky(C_mm, lower=True)
-        cy = jsp.linalg.solve_triangular(L_m, y_m, lower=True)
-
-        mll = -0.5 * jnp.sum(jnp.square(cy))
-        mll -= jnp.sum(jnp.log(jnp.diag(L_m)))
-        mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
-
-        # normalize by the number of samples
-        mll = mll / m
-
-        return mll
-
-    def log_marginal_likelihood(
-        self,
-        state: ModelState,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        y: ArrayLike,
-        y_derivs: ArrayLike,
-    ) -> Array:
-        return self._lml_dense(
-            params=state.params,
-            x=x,
-            jacobian=jacobian,
-            y=y,
-            y_derivs=y_derivs,
-            kernel=state.kernel,
-            mean_function=state.mean_function,
-        )
-
-    def neg_log_marginal_likelihood(
-        self,
-        state: ModelState,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        y: ArrayLike,
-        y_derivs: ArrayLike,
-    ) -> Array:
-        return -self.log_marginal_likelihood(
-            state=state,
-            x=x,
-            jacobian=jacobian,
-            y=y,
-            y_derivs=y_derivs,
-        )
-
-    @partial(jit, static_argnums=(0, 6, 7))
-    def _fit_dense(
-        self,
-        params: ParameterDict,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        y: ArrayLike,
-        y_derivs: ArrayLike,
-        kernel: Kernel,
-        mean_function: Callable[ArrayLike, Array],
-    ) -> Tuple[Array, Array]:
-
-        kernel_params = params["kernel_params"]
-        sigma_targets = params["sigma_targets"].value
-        sigma_derivs = params["sigma_derivs"].value
-
-        mu = mean_function(y)
-        y = y - mu
-        y = y.reshape(-1, 1)
-        y_derivs = y_derivs.reshape(-1, 1)
-        y_m = jnp.concatenate((y, y_derivs))
-
-        # build kernel with target and derivatives
-        K = kernel(x1=x, x2=x, params=kernel_params)
-        K = K + (sigma_targets**2 + 1e-10) * jnp.eye(K.shape[0])
-
-        D01kj = kernel.d01kj(
-            x1=x,
-            jacobian1=jacobian,
-            x2=x,
-            jacobian2=jacobian,
-            params=kernel_params,
-        )
-        D01kj = D01kj + (sigma_derivs**2 + 1e-10) * jnp.eye(D01kj.shape[0])
-
-        D0kj = kernel.d0kj(
-            x1=x,
-            x2=x,
-            params=kernel_params,
-            jacobian=jacobian,
-        )
-
-        C_mm = jnp.concatenate(
-            (
-                jnp.concatenate((K, D0kj.T), axis=1),
-                jnp.concatenate((D0kj, D01kj), axis=1),
-            ),
-            axis=0,
-        )
-        c = jnp.linalg.solve(C_mm, y_m)
-        return c, mu
-
-    @partial(jit, static_argnums=(0, 6, 7, 8))
-    def _fit_iter(
-        self,
-        params: ParameterDict,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        y: ArrayLike,
-        y_derivs: ArrayLike,
-        kernel: Kernel,
-        mean_function: Callable[ArrayLike, Array],
-        n_pivots: int,
-        key_precond: KeyArray,
-    ) -> Tuple[Array, Array]:
-        # calculate mean and flatten y_derivs
-        mu = mean_function(y)
-        y = y - mu
-        y = y.reshape(-1, 1)
-        y_derivs = y_derivs.reshape(-1, 1)
-        y_m = jnp.concatenate((y, y_derivs))
-
-        matvec = _Ax_lhs_fun(
-            x1=x,
-            jacobian1=jacobian,
-            x2=x,
-            jacobian2=jacobian,
-            params=params,
-            kernel=kernel,
-            noise=True,
-        )
-
-        precond = _precond_rpcholesky_TD(
-            x1=x,
-            jacobian1=jacobian,
-            x2=x,
-            jacobian2=jacobian,
-            params=params,
-            kernel=kernel,
-            n_pivots=n_pivots,
-            key=key_precond,
-        )
-
-        c, _ = cg(matvec, y_m, M=precond, atol=1e-7)
-
-        return c, mu
+        self.state = ModelState(kernel, mean_function, params, loss_fn=loss_fn, **opt)
 
     def fit(
         self,
         x: ArrayLike,
-        jacobian: ArrayLike,
         y: ArrayLike,
+        jacobian: ArrayLike,
         y_derivs: ArrayLike,
         iterative: Optional[bool] = False,
         key: Optional[KeyArray] = None,
         num_restarts: Optional[int] = 0,
         minimize: Optional[bool] = True,
         return_history: Optional[bool] = False,
+        loss_kwargs: Optional[Dict] = None,
         n_pivots: Optional[int] = None,
         key_precond: Optional[KeyArray] = None,
     ) -> ModelState:
 
+        if loss_kwargs is None:
+            loss_kwargs = {}
+        loss_kwargs["iterative"] = iterative
+        loss_kwargs["n_pivots"] = n_pivots
+        loss_kwargs["key_precond"] = gpxargs.key_precond
+        loss_fn = loss_fn_with_args(self.state.loss_fn, loss_kwargs)
+
         if minimize:
-            minimization_function = scipy_minimize_TD
+            minimization_function = scipy_minimize_ol
             self.state, optres, *history = randomized_minimization_ol(
                 key=key,
                 state=self.state,
                 x=x,
                 y=y,
-                y_derivs=y_derivs,
                 jacobian=jacobian,
-                loss_fn=self.neg_log_marginal_likelihood,
+                y_derivs=y_derivs,
+                loss_fn=loss_fn,
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
                 return_history=return_history,
@@ -528,16 +687,16 @@ class TargetsDerivs:
                 )
 
         fit_func = (
-            partial(self._fit_iter, n_pivots=n_pivots, key_precond=key_precond)
+            partial(_fit_iter, n_pivots=n_pivots, key_precond=gpxargs.key_precond)
             if iterative
-            else self._fit_dense
+            else _fit_dense
         )
 
         c, mu = fit_func(
             params=self.state.params,
             x=x,
-            jacobian=jacobian,
             y=y,
+            jacobian=jacobian,
             y_derivs=y_derivs,
             kernel=self.state.kernel,
             mean_function=self.state.mean_function,
@@ -551,9 +710,9 @@ class TargetsDerivs:
         self.state = self.state.update(
             dict(
                 x_train=x,
+                y_train=y,
                 jacobian_train=jacobian,
                 jaccoef=jaccoef,
-                y_train=y,
                 y_derivs_train=y_derivs,
                 c=c,
                 c_targets=c_targets,
@@ -568,109 +727,6 @@ class TargetsDerivs:
 
         return self
 
-    @partial(jit, static_argnums=(0, 8))
-    def _predict_dense(
-        self,
-        params: ParameterDict,
-        x_train: ArrayLike,
-        jacobian_train: ArrayLike,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        c: ArrayLike,
-        mu: ArrayLike,
-        kernel: Kernel,
-    ) -> Union[Array, Tuple[Array, Array]]:
-
-        kernel_params = params["kernel_params"]
-
-        K = kernel(x1=x_train, x2=x, params=kernel_params)
-
-        D01kj = kernel.d01kj(
-            x1=x_train,
-            jacobian1=jacobian_train,
-            x2=x,
-            jacobian2=jacobian,
-            params=kernel_params,
-        )
-
-        D0kj = kernel.d0kj(
-            x1=x_train,
-            x2=x,
-            params=kernel_params,
-            jacobian=jacobian_train,
-        )
-
-        D1kj = kernel.d1kj(
-            x1=x_train,
-            x2=x,
-            params=kernel_params,
-            jacobian=jacobian,
-        )
-
-        K_mn = jnp.concatenate(
-            (
-                jnp.concatenate((K, D1kj), axis=1),
-                jnp.concatenate((D0kj, D01kj), axis=1),
-            ),
-            axis=0,
-        )
-
-        pred = jnp.dot(K_mn.T, c)
-
-        ns, _, nv = jacobian.shape
-
-        pred = pred.at[:ns, :].add(mu)
-        y_pred = pred[:ns]
-        y_derivs_pred = pred[ns : ns + nv * ns].reshape(ns, -1)
-
-        return y_pred, y_derivs_pred
-
-    @partial(
-        jit,
-        static_argnums=(
-            0,
-            8,
-        ),
-    )
-    def _predict_iter(
-        self,
-        params: ParameterDict,
-        x_train: ArrayLike,
-        jacobian_train: ArrayLike,
-        x: ArrayLike,
-        jacobian: ArrayLike,
-        c: ArrayLike,
-        mu: ArrayLike,
-        kernel: Kernel,
-    ):
-        """predicts derivative values with GPR
-
-        Predicts the derivative values with GPR.
-        The contraction with the linear coefficients is performed
-        iteratively.
-
-        μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
-
-        where K = ∂₁∂₂K
-        """
-        matvec = _Ax_lhs_fun(
-            x1=x,
-            jacobian1=jacobian,
-            x2=x_train,
-            jacobian2=jacobian_train,
-            params=params,
-            kernel=kernel,
-            noise=False,
-        )
-        pred = matvec(c)
-        # recover the right shape
-        ns, _ = x.shape
-
-        pred = pred.at[:ns, :].add(mu)
-        y_pred = pred[:ns]
-        y_derivs_pred = pred[ns:].reshape(ns, -1)
-        return y_pred, y_derivs_pred
-
     def predict(
         self,
         x: ArrayLike,
@@ -683,7 +739,7 @@ class TargetsDerivs:
                 "Model is not fitted. Run `fit` to fit the model before prediction."
             )
         if iterative:
-            return self._predict_iter(
+            return _predict_iter(
                 params=self.state.params,
                 x_train=self.state.x_train,
                 jacobian_train=self.state.jacobian_train,
@@ -694,7 +750,7 @@ class TargetsDerivs:
                 kernel=self.state.kernel,
             )
 
-        return self._predict_dense(
+        return _predict_dense(
             params=self.state.params,
             x_train=self.state.x_train,
             jacobian_train=self.state.jacobian_train,
