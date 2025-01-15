@@ -219,7 +219,7 @@ def _lml_iter(
     mean_function: Callable,
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
 ):
     # note: this is a dense operation, and as is
     #       is not sufficient to iteratively evaluate
@@ -241,7 +241,7 @@ def _lml_iter(
         mean_function=mean_function,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )
 
 
@@ -442,7 +442,7 @@ def _lml_derivs_iter(
     mean_function: Callable,
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
 ) -> Array:
     """log marginal likelihood for SGPR (projected processes)
 
@@ -471,5 +471,5 @@ def _lml_derivs_iter(
         mean_function=mean_function,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
-        lanczos_key=lanczos_key,
+        key_lanczos=key_lanczos,
     )

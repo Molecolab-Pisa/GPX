@@ -763,7 +763,7 @@ def _lml_dense(
     return mll
 
 
-@partial(jit, static_argnums=(3, 4, 5, 6))
+@partial(jit, static_argnums=(3, 4, 5, 6, 8))
 def _lml_iter(
     params: ParameterDict,
     x: ArrayLike,
@@ -772,7 +772,9 @@ def _lml_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
+    n_pivots: int,
+    key_precond: KeyArray,
 ):
     """log marginal likelihood for GPR
 
@@ -785,7 +787,13 @@ def _lml_iter(
     """
     m = y.shape[0]
     c, mu = _fit_iter(
-        params=params, x=x, y=y, kernel=kernel, mean_function=mean_function
+        params=params,
+        x=x,
+        y=y,
+        kernel=kernel,
+        mean_function=mean_function,
+        n_pivots=n_pivots,
+        key_precond=key_precond,
     )
     y = y - mu
 
@@ -797,7 +805,7 @@ def _lml_iter(
         num_evals=int(num_evals),
         dim_mat=int(m),
         num_lanczos=int(num_lanczos),
-        key=lanczos_key,
+        key=key_lanczos,
     )
     mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
 
@@ -856,7 +864,7 @@ def _lml_derivs_dense(
     return mll
 
 
-@partial(jit, static_argnums=(4, 5, 6, 7))
+@partial(jit, static_argnums=(4, 5, 6, 7, 9))
 def _lml_derivs_iter(
     params: ParameterDict,
     x: ArrayLike,
@@ -866,7 +874,9 @@ def _lml_derivs_iter(
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
     num_lanczos: int,
-    lanczos_key: KeyArray,
+    key_lanczos: KeyArray,
+    n_pivots: int,
+    key_precond: KeyArray,
 ) -> Array:
     """log marginal likelihood for GPR
 
@@ -889,6 +899,8 @@ def _lml_derivs_iter(
         y=y,
         kernel=kernel,
         mean_function=mean_function,
+        n_pivots=n_pivots,
+        key_precond=key_precond,
     )
     y = y - mu
 
@@ -908,7 +920,7 @@ def _lml_derivs_iter(
         num_evals=int(num_evals),
         dim_mat=int(m),
         num_lanczos=int(num_lanczos),
-        key=lanczos_key,
+        key=key_lanczos,
     )
     mll -= m * 0.5 * jnp.log(2.0 * jnp.pi)
 
