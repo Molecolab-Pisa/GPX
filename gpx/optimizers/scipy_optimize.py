@@ -129,6 +129,8 @@ def scipy_minimize_ol(
     y_derivs: ArrayLike,
     jacobian: ArrayLike,
     loss_fn: Callable,
+    y_derivs_2: ArrayLike = None,
+    jacobian_2: ArrayLike = None,
     callback: Optional[Callable] = None,
 ) -> Tuple[ModelState, OptimizeResult]:
     """minimization of a loss function using SciPy's L-BFGS-B
@@ -155,7 +157,13 @@ def scipy_minimize_ol(
         state: updated model state
         optres: optimization results, as output by the SciPy's optimizer
     """
-    loss_fn = partial(loss_fn, y_derivs=y_derivs, jacobian=jacobian)
+    loss_fn = partial(
+        loss_fn,
+        y_derivs=y_derivs,
+        y_derivs_2=y_derivs_2,
+        jacobian=jacobian,
+        jacobian_2=jacobian_2,
+    )
     return scipy_minimize(state=state, x=x, y=y, loss_fn=loss_fn, callback=callback)
 
 
