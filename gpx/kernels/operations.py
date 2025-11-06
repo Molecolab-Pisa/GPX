@@ -19,6 +19,7 @@ from typing import Callable
 
 from jax import Array
 from jax.typing import ArrayLike
+from functools import partial
 
 # =============================================================================
 # Kernel Centering
@@ -185,10 +186,11 @@ def prod_kernels(kernel_func1: Callable, kernel_func2: Callable) -> Callable:
     """
 
     # consistent shapes, see "sum_kernels"
-    def kernel(x1, x2, params, active_dims=None):
+    def kernel(x1, x2, params, predict=False, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
-        return kernel_func1(x1, x2, params1) * kernel_func2(x1, x2, params2)
+
+        return partial(kernel_func1,predict=predict)(x1, x2, params1) * partial(kernel_func2, predict=predict)(x1, x2, params2)
 
     return kernel
 
@@ -221,13 +223,13 @@ def prod_kernels_deriv(
     # of the kernels that are not derived. For each sample, the jacobian kernel
     # has a shape multiplied by n_features (M below). Each of these entries multiplies
     # the entry of that sample in the non-derived kernel.
-    def kernel(x1, x2, params, active_dims=None):
+    def kernel(x1, x2, params, predict=False, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, M = x1.shape
-        return kernel_func1(x1, x2, params1).repeat(M, axis=axis) * deriv_func2(
+        return partial(kernel_func1, predict=predict)(x1, x2, params1).repeat(M, axis=axis) * partial(deriv_func2, predict=predict)(
             x1, x2, params2
-        ) + deriv_func1(x1, x2, params1) * kernel_func2(x1, x2, params2).repeat(
+        ) + partial(deriv_func1, predict=predict)(x1, x2, params1) * partial(kernel_func2, predict=predict)(x1, x2, params2).repeat(
             M, axis=axis
         )
 
@@ -259,7 +261,7 @@ def prod_kernels_deriv01(
           the two kernels.
     """
 
-    def kernel(x1, x2, params, active_dims=None):
+    def kernel(x1, x2, params, predict=False, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, M = x2.shape
@@ -273,6 +275,16 @@ def prod_kernels_deriv01(
             + deriv01_func1(x1, x2, params1)
             * kernel_func2(x1, x2, params2).repeat(M, axis=0).repeat(M, axis=-1)
         )
+#        return (
+#            partial(kernel_func1, predict=predict)(x1, x2, params1).repeat(M, axis=0).repeat(M, axis=-1)
+#            * partial(deriv01_func2, predict=predict)(x1, x2, params2)
+#            + partial(deriv0_func1, predict=predict)(x1, x2, params1).repeat(M, axis=-1)
+#            * partial(deriv1_func2, predict=predict)(x1, x2, params2).repeat(M, axis=0)
+#            + partial(deriv1_func1, predict=predict)(x1, x2, params1).repeat(M, axis=0)
+#            * partial(deriv0_func2, predict=predict)(x1, x2, params2).repeat(M, axis=-1)
+#            + partial(deriv01_func1, predict=predict)(x1, x2, params1)
+#            * partial(kernel_func2, predict=predict)(x1, x2, params2).repeat(M, axis=0).repeat(M, axis=-1)
+#        )
 
     return kernel
 
@@ -302,13 +314,13 @@ def prod_kernels_deriv_jac(
           the two kernels.
     """
 
-    def kernel(x1, x2, params, jacobian, active_dims=None):
+    def kernel(x1, x2, params, jacobian, predict=False, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, _, jv = jacobian.shape
-        return kernel_func1(x1, x2, params1).repeat(jv, axis=axis) * deriv_func2(
+        return partial(kernel_func1, predict=predict)(x1, x2, params1).repeat(jv, axis=axis) * partial(deriv_func2, predict=predict)(
             x1, x2, params2, jacobian
-        ) + deriv_func1(x1, x2, params1, jacobian) * kernel_func2(
+        ) + partial(deriv_func1, predict=predict)(x1, x2, params1, jacobian) * partial(kernel_func2, predict=predict)(
             x1, x2, params2
         ).repeat(
             jv, axis=axis
@@ -370,20 +382,20 @@ def prod_kernels_deriv01_jac(
           the two kernels.
     """
 
-    def kernel(x1, x2, params, jacobian1, jacobian2, active_dims=None):
+    def kernel(x1, x2, params, jacobian1, jacobian2, predict=False, active_dims=None):
         params1 = params["kernel1"]
         params2 = params["kernel2"]
         _, _, jv1 = jacobian1.shape
         _, _, jv2 = jacobian2.shape
         return (
-            kernel_func1(x1, x2, params1).repeat(jv1, axis=0).repeat(jv2, axis=-1)
-            * deriv01_func2(x1, x2, params2, jacobian1, jacobian2)
-            + deriv0_func1(x1, x2, params1, jacobian1).repeat(jv2, axis=-1)
-            * deriv1_func2(x1, x2, params2, jacobian2).repeat(jv1, axis=0)
-            + deriv1_func1(x1, x2, params1, jacobian2).repeat(jv1, axis=0)
-            * deriv0_func2(x1, x2, params2, jacobian1).repeat(jv2, axis=-1)
-            + deriv01_func1(x1, x2, params1, jacobian1, jacobian2)
-            * kernel_func2(x1, x2, params2).repeat(jv1, axis=0).repeat(jv2, axis=-1)
+            partial(kernel_func1, predict=predict)(x1, x2, params1).repeat(jv1, axis=0).repeat(jv2, axis=-1)
+            * partial(deriv01_func2, predict=predict)(x1, x2, params2, jacobian1, jacobian2)
+            + partial(deriv0_func1, predict=predict)(x1, x2, params1, jacobian1).repeat(jv2, axis=-1)
+            * partial(deriv1_func2, predict=predict)(x1, x2, params2, jacobian2).repeat(jv1, axis=0)
+            + partial(deriv1_func1, predict=predict)(x1, x2, params1, jacobian2).repeat(jv1, axis=0)
+            * partial(deriv0_func2, predict=predict)(x1, x2, params2, jacobian1).repeat(jv2, axis=-1)
+            + partial(deriv01_func1, predict=predict)(x1, x2, params1, jacobian1, jacobian2)
+            * partial(kernel_func2, predict=predict)(x1, x2, params2).repeat(jv1, axis=0).repeat(jv2, axis=-1)
         )
 
     return kernel
