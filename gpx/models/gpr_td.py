@@ -19,6 +19,7 @@ import warnings
 from functools import partial
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
@@ -41,9 +42,11 @@ KeyArray = Array
 
 def _Ax_lhs_fun(
     x1: ArrayLike,
-    jacobian1: ArrayLike,
+    jacobian1_1: ArrayLike,
+    jacobian1_2: ArrayLike,
     x2: ArrayLike,
-    jacobian2: ArrayLike,
+    jacobian2_1: ArrayLike,
+    jacobian2_2: ArrayLike,
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
@@ -56,56 +59,93 @@ def _Ax_lhs_fun(
     @jit
     def matvec(z):
 
-        ns, _, jv = jacobian2.shape
+        ns2, _, jv2_1 = jacobian2_1.shape
 
-        z1 = z[:ns]
-        z2 = z[ns:]
+        z1 = z[:ns2]
+        z2 = z[ns2:ns2 + ns2 * jv2_1]
+        if jacobian2_2 is not None:
+            sigma_derivs2 = params["sigma_derivs2"].value
+            _, _, jv2_2 = jacobian2_2.shape
+            z3 = z[-ns2 * jv2_2:]
 
         def update_row(carry, xjs):
 
-            x1s, j1s = recover_first_axis(xjs)
+            if jacobian1_2 is not None:
+                x1s, j1s, j2s = recover_first_axis(xjs)
+            else:
+                x1s, j1s = recover_first_axis(xjs)
 
             row11 = kernel(x1s, x2, kernel_params)
             if noise:
-                jitter_noise1 = sigma_targets**2 + 1e-10
+                jitter_noise1 = sigma_targets ** 2 + 1e-10
                 row11 = update_row_diagonal(row11, carry, jitter_noise1)
-
-            row12 = kernel.d1kj(x1s, x2, kernel_params, jacobian2)
-
-            rowvec1 = jnp.dot(row11, z1) + jnp.dot(row12, z2)
+            row12 = kernel.d1kj(x1s, x2, kernel_params, jacobian2_1)
+            if jacobian2_2 is not None:
+                row13 = kernel.d1kj(x1s, x2, kernel_params, jacobian2_2)
+                rowvec1 = jnp.dot(row11, z1) + jnp.dot(row12, z2) + jnp.dot(row13, z3)
+            else:
+                rowvec1 = jnp.dot(row11, z1) + jnp.dot(row12, z2)
 
             row21 = kernel.d0kj(x1s, x2, kernel_params, j1s)
-            row22 = kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2)
+            row22 = kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2_1)
             if noise:
-                jitter_noise2 = sigma_derivs**2 + 1e-10
+                jitter_noise2 = sigma_derivs ** 2 + 1e-10
                 row22 = update_row_diagonal(row22, carry, jitter_noise2)
+            if jacobian2_2 is not None:
+                row23 = kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2_2)
+                rowvec2 = jnp.dot(row21, z1) + jnp.dot(row22, z2) + jnp.dot(row23, z3)
+            else:
+                rowvec2 = jnp.dot(row21, z1) + jnp.dot(row22, z2)
 
-            rowvec2 = jnp.dot(row21, z1) + jnp.dot(row22, z2)
-
-            rowvec = jnp.concatenate((rowvec1, rowvec2), axis=0)
+            if jacobian1_2 is not None:
+                row31 = kernel.d0kj(x1s, x2, kernel_params, j2s)
+                row32 = kernel.d01kj(x1s, x2, kernel_params, j2s, jacobian2_1)
+                row33 = kernel.d01kj(x1s, x2, kernel_params, j2s, jacobian2_2)
+                if noise:
+                    jitter_noise2 = sigma_derivs2 ** 2 + 1e-10
+                    row33 = update_row_diagonal(row33, carry, jitter_noise2)
+                rowvec3 = jnp.dot(row31, z1) + jnp.dot(row32, z2) + jnp.dot(row33, z3)
+                rowvec = jnp.concatenate((rowvec1, rowvec2, rowvec3), axis=0)
+            else:
+                rowvec = jnp.concatenate((rowvec1, rowvec2), axis=0)
 
             carry = carry + 1
 
             return carry, rowvec
 
-        _, res = lax.scan(update_row, 0, (x1, jacobian1))
+        if jacobian1_2 is not None:
+            _, res = lax.scan(update_row, 0, (x1, jacobian1_1, jacobian1_2))
+        else:
+            _, res = lax.scan(update_row, 0, (x1, jacobian1_1))
         res = jnp.concatenate(res, axis=0)
 
-        ns, _, jv = jacobian1.shape
-
-        res1 = res[jnp.arange(0, ns + ns * jv, jv + 1)]
-        res2 = jnp.delete(res, np.arange(0, ns + ns * jv, jv + 1), axis=0)
-
-        return jnp.concatenate((res1, res2))
+        ns1, _, jv1_1 = jacobian1_1.shape
+        if jacobian1_2 is not None:
+            _, _, jv1_2 = jacobian1_2.shape
+            mask = np.array([[1,] + [0 for x in range(jv1_1)] + [0 for x in range(jv1_2)] for x in range(ns1)]).reshape(-1).astype(bool)
+            ind = np.arange(ns1 + ns1 * jv1_1 + ns1 * jv1_2)[mask]
+            res1 = res[ind]
+            mask = np.array([[0,] + [1 for x in range(jv1_1)] + [0 for x in range(jv1_2)] for x in range(ns1)]).reshape(-1).astype(bool)
+            ind = np.arange(ns1 + ns1 * jv1_1 + ns1 * jv1_2)[mask]
+            res2 = res[ind]
+            mask = np.array([[0,] + [0 for x in range(jv1_1)] + [1 for x in range(jv1_2)] for x in range(ns1)]).reshape(-1).astype(bool)
+            ind = np.arange(ns1 + ns1 * jv1_1 + ns1 * jv1_2)[mask]
+            res3 = res[ind]
+            return jnp.concatenate((res1, res2, res3))
+        else:
+            res1 = res[jnp.arange(0, ns1 + ns1 * jv1_1, jv1_1 + 1)]
+            res2 = jnp.delete(res, np.arange(0, ns1 + ns1 * jv1_1, jv1_1 + 1), axis=0)
+            return jnp.concatenate((res1, res2))
 
     return matvec
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(4, 5))
 def rpcholesky_TD(
     key: KeyArray,
     x: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     n_pivots: int,
     kernel: Kernel,
     kernel_params: Dict[str, Parameter],
@@ -113,31 +153,50 @@ def rpcholesky_TD(
 
     # x is (number of points, number of features)
     n, _ = x.shape
-    _, _, jv = jacobian.shape
-
-    # factor matrix (F)
-    fmat = jnp.zeros((n + n * jv, n_pivots))
+    _, _, jv_1 = jacobian.shape
+    if jacobian_2 is not None:
+        _, _, jv_2 = jacobian_2.shape
+        # factor matrix (F)
+        fmat = jnp.zeros((n + n * jv_1 + n * jv_2, n_pivots))
+    else:
+        # factor matrix (F)
+        fmat = jnp.zeros((n + n * jv_1, n_pivots))
 
     # list of pivot indices (S)
     pivots = jnp.zeros((n_pivots,), dtype=int)
 
     # compute the diagonal
-    def diagonal_wrapper(init, xj):
+    def diagonal_wrapper(init, xjs):
         # ensure that each point is (1,)
-        x, jacobian = xj
-        x = jnp.expand_dims(x, axis=0)
-        jacobian = jnp.expand_dims(jacobian, axis=0)
+        if jacobian_2 is not None:
+            xs, j1s, j2s = xjs
+            xs = jnp.expand_dims(xs, axis=0)
+            j1s = jnp.expand_dims(j1s, axis=0)
+            j2s = jnp.expand_dims(j2s, axis=0)
+            return init, (
+                kernel.k(xs, xs, kernel_params).squeeze(),
+                kernel.d01kj(xs, xs, kernel_params, j1s, j1s),
+                kernel.d01kj(xs, xs, kernel_params, j2s, j2s)
+            )
+        else:
+            xs, j1s = xjs
+            xs = jnp.expand_dims(xs, axis=0)
+            j1s = jnp.expand_dims(j1s, axis=0)
+            return init, (
+                kernel(xs, xs, kernel_params).squeeze(),
+                kernel.d01kj(xs, xs, kernel_params, j1s, j1s),
+            )
 
-        return init, (
-            kernel(x, x, kernel_params).squeeze(),
-            kernel.d01kj(x, x, kernel_params, jacobian, jacobian),
+    if jacobian_2 is not None:
+        _, diags = lax.scan(diagonal_wrapper, init=0, xs=(x, jacobian, jacobian_2))
+        diag = jnp.concatenate(
+            (diags[0], jnp.diagonal(diags[1], axis1=1, axis2=2).reshape(-1), jnp.diagonal(diags[2], axis1=1, axis2=2).reshape(-1))
         )
-
-    _, diags = lax.scan(diagonal_wrapper, init=0, xs=(x, jacobian))
-
-    diag = jnp.concatenate(
-        (diags[0], jnp.diagonal(diags[1], axis1=1, axis2=2).reshape(-1))
-    )
+    else:
+        _, diags = lax.scan(diagonal_wrapper, init=0, xs=(x, jacobian))
+        diag = jnp.concatenate(
+            (diags[0], jnp.diagonal(diags[1], axis1=1, axis2=2).reshape(-1))
+        )
 
     # iteratively build the Nystrom approximation
     def fori_wrapper(i, val):
@@ -155,23 +214,46 @@ def rpcholesky_TD(
         # note: we are unable to select only a few columns of F due to
         #       the compilation within lax.fori_loop
 
-        def true_fun():
-            k = kernel(jnp.expand_dims(x[s], axis=0), x, kernel_params).squeeze()
-            d1kj = kernel.d1kj(
-                jnp.expand_dims(x[s], axis=0), x, kernel_params, jacobian
-            ).squeeze()
-            return jnp.concatenate((k, d1kj), axis=0) - jnp.dot(fmat, fmat[s].T)
+        def first_row():
+            xs = jnp.expand_dims(x[s], axis=0)
+            k = kernel.k(xs, x, kernel_params).squeeze()
+            d1kj1 = kernel.d1kj(xs, x, kernel_params, jacobian).squeeze()
+            if jacobian_2 is not None:
+                d1kj2 = kernel.d1kj(xs, x, kernel_params, jacobian_2).squeeze()
+                return jnp.concatenate((k, d1kj1, d1kj2), axis=0) - jnp.dot(fmat, fmat[s].T)
+            else:
+                return jnp.concatenate((k, d1kj1), axis=0) - jnp.dot(fmat, fmat[s].T)
+
+        def second_row():
+            index1 = ((s - n) / jv_1).astype(int)
+            index2 = jnp.mod((s - n), jv_1)
+            xs = jnp.expand_dims(x[index1], axis=0)
+            j1s = jnp.expand_dims(jacobian[index1], axis=0)
+            d0kj = kernel.d0kj(xs, x, kernel_params, j1s)[index2]
+            d01kj1 = kernel.d01kj(xs, x, kernel_params, j1s, jacobian)[index2]
+            if jacobian_2 is not None:
+                d01kj2 = kernel.d01kj(xs, x, kernel_params, j1s, jacobian_2)[index2]
+                return jnp.concatenate((d0kj, d01kj1, d01kj2), axis=0) - jnp.dot(fmat, fmat[s].T)
+            else:
+                return jnp.concatenate((d0kj, d01kj1), axis=0) - jnp.dot(fmat, fmat[s].T)
+
+        def third_row():
+            index1 = ((s - n - n * jv_1) / jv_2).astype(int)
+            index2 = jnp.mod((s - n - n * jv_1), jv_2)
+            xs = jnp.expand_dims(x[index1], axis=0)
+            j2s = jnp.expand_dims(jacobian_2[index1], axis=0)
+            d0kj = kernel.d0kj(xs, x, kernel_params, j2s)[index2]
+            d01kj1 = kernel.d01kj(xs, x, kernel_params, j2s, jacobian)[index2]
+            d01kj2 = kernel.d01kj(xs, x, kernel_params, j2s, jacobian_2)[index2]
+            return jnp.concatenate((d0kj, d01kj1, d01kj2), axis=0) - jnp.dot(fmat, fmat[s].T)
 
         def false_fun():
-            index1 = ((s - n) / jv).astype(int)
-            index2 = jnp.mod((s - n), jv)
-            xs = jnp.expand_dims(x[index1], axis=0)
-            js = jnp.expand_dims(jacobian[index1], axis=0)
-            d0kj = kernel.d0kj(xs, x, kernel_params, js)[index2]
-            d01kj = kernel.d01kj(xs, x, kernel_params, js, jacobian)[index2]
-            return jnp.concatenate((d0kj, d01kj), axis=0) - jnp.dot(fmat, fmat[s].T)
+            if jacobian_2 is not None:
+                return jnp.where(s < n + n * jv_1, second_row(), third_row())
+            else:
+                return second_row()
 
-        g = jnp.where(s < n, true_fun(), false_fun())
+        g = jnp.where(s < n, first_row(), false_fun())
 
         # update the i-th column of the factor matrix
         # note: 1e-6 is a jitter factor that ensures we are not dividing by 0
@@ -190,10 +272,9 @@ def rpcholesky_TD(
 
 
 def _precond_rpcholesky_TD(
-    x1: ArrayLike,
-    jacobian1: ArrayLike,
-    x2: ArrayLike,
-    jacobian2: ArrayLike,
+    x: ArrayLike,
+    jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     params: ParameterDict,
     kernel: Kernel,
     n_pivots: int,
@@ -205,8 +286,9 @@ def _precond_rpcholesky_TD(
 
     fmat, _ = rpcholesky_TD(
         key=key,
-        x=x1,
-        jacobian=jacobian1,
+        x=x,
+        jacobian=jacobian,
+        jacobian_2=jacobian_2,
         n_pivots=n_pivots,
         kernel=kernel,
         kernel_params=kernel_params,
@@ -227,13 +309,15 @@ def _precond_rpcholesky_TD(
     return matvec
 
 
-@partial(jit, static_argnums=(5, 6))
+@partial(jit, static_argnums=(7, 8))
 def _lml_dense(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     y_derivs: ArrayLike,
+    y_derivs2: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Array:
@@ -247,35 +331,67 @@ def _lml_dense(
     y_derivs = y_derivs.reshape(-1, 1)
     y_m = jnp.concatenate((y, y_derivs))
     m = y_m.shape[0]
+    if y_derivs2 is not None:
+        sigma_derivs2 = params["sigma_derivs2"].value
+        y_derivs2 = y_derivs2.reshape(-1,1)
+        y_m = jnp.concatenate((y_m,y_derivs2))
 
     # build kernel with target and derivatives
     K = kernel(x1=x, x2=x, params=kernel_params)
-    K = K + sigma_targets**2 * jnp.eye(K.shape[0])
+    K = K + sigma_targets **2 * jnp.eye(K.shape[0])
 
-    D01kj = kernel.d01kj(
+    D01kj_1 = kernel.d01kj(
         x1=x,
         jacobian1=jacobian,
         x2=x,
         jacobian2=jacobian,
         params=kernel_params,
     )
-    D01kj = D01kj + sigma_derivs**2 * jnp.eye(D01kj.shape[0])
+    D01kj_1 = D01kj_1 + sigma_derivs ** 2 * jnp.eye(D01kj_1.shape[0])
 
-    D0kj = kernel.d0kj(
+    D0kj_1 = kernel.d0kj(
         x1=x,
         x2=x,
         params=kernel_params,
         jacobian=jacobian,
     )
 
-    C_mm = jnp.concatenate(
-        (
-            jnp.concatenate((K, D0kj.T), axis=1),
-            jnp.concatenate((D0kj, D01kj), axis=1),
-        ),
-        axis=0,
-    )
+    if jacobian_2 is None:
+        C_mm = jnp.concatenate(
+            (
+                jnp.concatenate((K, D0kj_1.T), axis=1),
+                jnp.concatenate((D0kj_1, D01kj_1), axis=1),
+            ),
+            axis=0,
+        )
+    else:
+        D01kj_2 = kernel.d01kj(
+            x1=x,
+            jacobian1=jacobian_2,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+        D01kj_2 = D01kj_2 + sigma_derivs2 ** 2 * jnp.eye(D01kj_2.shape[0])
 
+        D01kj_12 = kernel.d01kj(
+            x1=x,
+            jacobian1=jacobian,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+
+        D0kj_2 = kernel.d0kj(
+            x1=x,
+            x2=x,
+            params=kernel_params,
+            jacobian=jacobian_2,
+        )
+
+    C_mm = jnp.concatenate((jnp.concatenate((K,D0kj_1.T,D0kj_2.T),axis=1),
+                jnp.concatenate((D0kj_1,D01kj_1,D01kj_12),axis=1),
+                jnp.concatenate((D0kj_2,D01kj_12.T,D01kj_2),axis=1)),axis=0)
     L_m = jsp.linalg.cholesky(C_mm, lower=True)
     cy = jsp.linalg.solve_triangular(L_m, y_m, lower=True)
 
@@ -289,13 +405,15 @@ def _lml_dense(
     return mll
 
 
-@partial(jit, static_argnums=(5, 6, 7, 8, 10))
+@partial(jit, static_argnums=(7, 8, 9, 10, 12))
 def _lml_iter(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     y_derivs: ArrayLike,
+    y_derivs2: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
     num_evals: int,
@@ -308,8 +426,10 @@ def _lml_iter(
         params=params,
         x=x,
         jacobian=jacobian,
+        jacobian_2=jacobian_2,
         y=y,
         y_derivs=y_derivs,
+        y_derivs2=y_derivs2,
         kernel=kernel,
         mean_function=mean_function,
         n_pivots=n_pivots,
@@ -319,13 +439,19 @@ def _lml_iter(
     y = y.reshape(-1, 1)
     y_derivs = y_derivs.reshape(-1, 1)
     y_m = jnp.concatenate((y, y_derivs))
+    if y_derivs2 is not None:
+        sigma_derivs2 = params["sigma_derivs2"].value
+        y_derivs2 = y_derivs2.reshape(-1,1)
+        y_m = jnp.concatenate((y_m,y_derivs2))
     m = y_m.shape[0]
 
     matvec = _Ax_lhs_fun(
         x1=x,
-        jacobian1=jacobian,
+        jacobian1_1=jacobian,
+        jacobian1_2=jacobian_2,
         x2=x,
-        jacobian2=jacobian,
+        jacobian2_1=jacobian,
+        jacobian2_2=jacobian_2,
         params=params,
         kernel=kernel,
         noise=True,
@@ -347,13 +473,15 @@ def _lml_iter(
     return mll
 
 
-@partial(jit, static_argnums=(5, 6))
+@partial(jit, static_argnums=(7, 8))
 def _fit_dense(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     y_derivs: ArrayLike,
+    y_derivs2: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
 ) -> Tuple[Array, Array]:
@@ -367,49 +495,88 @@ def _fit_dense(
     y = y.reshape(-1, 1)
     y_derivs = y_derivs.reshape(-1, 1)
     y_m = jnp.concatenate((y, y_derivs))
+    if y_derivs2 is not None:
+        sigma_derivs2 = params["sigma_derivs2"].value
+        y_derivs2 = y_derivs2.reshape(-1,1)
+        y_m = jnp.concatenate((y_m,y_derivs2))
 
     # build kernel with target and derivatives
-    K = kernel(x1=x, x2=x, params=kernel_params)
-    K = K + (sigma_targets**2 + 1e-10) * jnp.eye(K.shape[0])
 
-    D01kj = kernel.d01kj(
+    K = kernel(
+        x1=x,
+        x2=x,
+        params=kernel_params
+    )
+    K = K + (sigma_targets ** 2 + 1e-10) * jnp.eye(K.shape[0])
+
+
+    D01kj_1 = kernel.d01kj(
         x1=x,
         jacobian1=jacobian,
         x2=x,
         jacobian2=jacobian,
         params=kernel_params,
     )
-    D01kj = D01kj + (sigma_derivs**2 + 1e-10) * jnp.eye(D01kj.shape[0])
+    D01kj_1 = D01kj_1 + (sigma_derivs ** 2 + 1e-10)* jnp.eye(D01kj_1.shape[0])
 
-    D0kj = kernel.d0kj(
+    D0kj_1 = kernel.d0kj(
         x1=x,
         x2=x,
         params=kernel_params,
         jacobian=jacobian,
     )
 
-    C_mm = jnp.concatenate(
-        (
-            jnp.concatenate((K, D0kj.T), axis=1),
-            jnp.concatenate((D0kj, D01kj), axis=1),
-        ),
-        axis=0,
-    )
-    c = jnp.linalg.solve(C_mm, y_m)
+    if jacobian_2 is None:
+        C_mm = jnp.concatenate((jnp.concatenate((K,D0kj_1.T),axis=1),jnp.concatenate((D0kj_1,D01kj_1),axis=1)),axis=0)
+        c = jnp.linalg.solve(C_mm,y_m)
+        return c, mu
+    else:
+
+        D01kj_2 = kernel.d01kj(
+            x1=x,
+            jacobian1=jacobian_2,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+        D01kj_2 = D01kj_2 + (sigma_derivs2 ** 2 + 1e-10) * jnp.eye(D01kj_2.shape[0])
+
+        D01kj_12 = kernel.d01kj(
+            x1=x,
+            jacobian1=jacobian,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+
+        D0kj_2 = kernel.d0kj(
+            x1=x,
+            x2=x,
+            params=kernel_params,
+            jacobian=jacobian_2,
+        )
+
+    C_mm = jnp.concatenate((jnp.concatenate((K,D0kj_1.T,D0kj_2.T),axis=1),
+                jnp.concatenate((D0kj_1,D01kj_1,D01kj_12),axis=1),
+                jnp.concatenate((D0kj_2,D01kj_12.T,D01kj_2),axis=1)),axis=0)
+    c = jnp.linalg.solve(C_mm,y_m)
     return c, mu
 
 
-@partial(jit, static_argnums=(5, 6, 7))
+@partial(jit, static_argnums=(7, 8, 9))
 def _fit_iter(
     params: ParameterDict,
     x: ArrayLike,
     y: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     y_derivs: ArrayLike,
+    y_derivs2: ArrayLike,
     kernel: Kernel,
     mean_function: Callable[ArrayLike, Array],
     n_pivots: int,
     key_precond: KeyArray,
+    c_guess: ArrayLike = None,
 ) -> Tuple[Array, Array]:
     # calculate mean and flatten y_derivs
     mu = mean_function(y)
@@ -417,40 +584,50 @@ def _fit_iter(
     y = y.reshape(-1, 1)
     y_derivs = y_derivs.reshape(-1, 1)
     y_m = jnp.concatenate((y, y_derivs))
+    if y_derivs2 is not None:
+        sigma_derivs2 = params["sigma_derivs2"].value
+        y_derivs2 = y_derivs2.reshape(-1,1)
+        y_m = jnp.concatenate((y_m,y_derivs2))
 
     matvec = _Ax_lhs_fun(
         x1=x,
-        jacobian1=jacobian,
+        jacobian1_1=jacobian,
+        jacobian1_2=jacobian_2,
         x2=x,
-        jacobian2=jacobian,
+        jacobian2_1=jacobian,
+        jacobian2_2=jacobian_2,
         params=params,
         kernel=kernel,
         noise=True,
     )
 
     precond = _precond_rpcholesky_TD(
-        x1=x,
-        jacobian1=jacobian,
-        x2=x,
-        jacobian2=jacobian,
+        x=x,
+        jacobian=jacobian,
+        jacobian_2=jacobian_2,
         params=params,
         kernel=kernel,
         n_pivots=n_pivots,
         key=key_precond,
     )
 
-    c, _ = cg(matvec, y_m, M=precond, atol=1e-7)
+    if c_guess is not None:
+        c, _ = cg(matvec, y_m, M=precond, atol=1e-7, x0=c_guess)
+    else:
+        c, _ = cg(matvec, y_m, M=precond, atol=1e-7)
 
     return c, mu
 
 
-@partial(jit, static_argnums=(7))
+@partial(jit, static_argnums=(9))
 def _predict_dense(
     params: ParameterDict,
     x_train: ArrayLike,
     jacobian_train: ArrayLike,
+    jacobian_train_2: ArrayLike,
     x: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     c: ArrayLike,
     mu: ArrayLike,
     kernel: Kernel,
@@ -460,7 +637,7 @@ def _predict_dense(
 
     K = kernel(x1=x_train, x2=x, params=kernel_params)
 
-    D01kj = kernel.d01kj(
+    D01kj_1 = kernel.d01kj(
         x1=x_train,
         jacobian1=jacobian_train,
         x2=x,
@@ -468,46 +645,88 @@ def _predict_dense(
         params=kernel_params,
     )
 
-    D0kj = kernel.d0kj(
+    D0kj_1 = kernel.d0kj(
         x1=x_train,
         x2=x,
         params=kernel_params,
         jacobian=jacobian_train,
     )
 
-    D1kj = kernel.d1kj(
+    D1kj_1 = kernel.d1kj(
         x1=x_train,
         x2=x,
         params=kernel_params,
         jacobian=jacobian,
     )
+    if jacobian_2 is None:
+        K_mn = jnp.concatenate((jnp.concatenate((K,D1kj_1),axis=1),jnp.concatenate((D0kj_1,D01kj_1),axis=1)),axis=0)
+    else:
 
-    K_mn = jnp.concatenate(
-        (
-            jnp.concatenate((K, D1kj), axis=1),
-            jnp.concatenate((D0kj, D01kj), axis=1),
-        ),
-        axis=0,
-    )
+        D01kj_2 = kernel.d01kj(
+            x1=x_train,
+            jacobian1=jacobian_train_2,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+
+        D01kj_12 = kernel.d01kj(
+            x1=x_train,
+            jacobian1=jacobian_train,
+            x2=x,
+            jacobian2=jacobian_2,
+            params=kernel_params,
+        )
+        D01kj_21 = kernel.d01kj(
+            x1=x_train,
+            jacobian1=jacobian_train_2,
+            x2=x,
+            jacobian2=jacobian,
+            params=kernel_params,
+        )
+
+        D0kj_2 = kernel.d0kj(
+            x1=x_train,
+            x2=x,
+            params=kernel_params,
+            jacobian=jacobian_train_2,
+        )
+        D1kj_2 = kernel.d1kj(
+            x1=x_train,
+            x2=x,
+            params=kernel_params,
+            jacobian=jacobian_2,
+        )
+
+    K_mn = jnp.concatenate((jnp.concatenate((K,D1kj_1,D1kj_2),axis=1),
+                            jnp.concatenate((D0kj_1,D01kj_1,D01kj_12),axis=1),
+                            jnp.concatenate((D0kj_2,D01kj_21,D01kj_2),axis=1)),axis=0)
 
     pred = jnp.dot(K_mn.T, c)
 
-    ns, _, nv = jacobian.shape
+    ns, _, nv_1 = jacobian.shape
 
     pred = pred.at[:ns, :].add(mu)
     y_pred = pred[:ns]
-    y_derivs_pred = pred[ns : ns + nv * ns].reshape(ns, -1)
+    y_derivs_pred = pred[ns : ns + nv_1 * ns].reshape(ns, -1)
 
-    return y_pred, y_derivs_pred
+    if jacobian_2 is not None:
+        _, _, nv_2 = jacobian_2.shape
+        y_derivs2_pred = pred[ns + nv_1 * ns:ns + nv_1 * ns + nv_2 * ns].reshape(ns,-1)
+        return y_pred, y_derivs_pred, y_derivs2_pred
+    else:
+        return y_pred, y_derivs_pred
 
 
-@partial(jit, static_argnums=(7))
+@partial(jit, static_argnums=(9))
 def _predict_iter(
     params: ParameterDict,
     x_train: ArrayLike,
     jacobian_train: ArrayLike,
+    jacobian_train_2: ArrayLike,
     x: ArrayLike,
     jacobian: ArrayLike,
+    jacobian_2: ArrayLike,
     c: ArrayLike,
     mu: ArrayLike,
     kernel: Kernel,
@@ -524,21 +743,29 @@ def _predict_iter(
     """
     matvec = _Ax_lhs_fun(
         x1=x,
-        jacobian1=jacobian,
+        jacobian1_1=jacobian,
+        jacobian1_2=jacobian_2,
         x2=x_train,
-        jacobian2=jacobian_train,
+        jacobian2_1=jacobian_train,
+        jacobian2_2=jacobian_train_2,
         params=params,
         kernel=kernel,
         noise=False,
     )
     pred = matvec(c)
     # recover the right shape
-    ns, _ = x.shape
+    ns, _, nv_1 = jacobian.shape
 
     pred = pred.at[:ns, :].add(mu)
     y_pred = pred[:ns]
-    y_derivs_pred = pred[ns:].reshape(ns, -1)
-    return y_pred, y_derivs_pred
+    y_derivs_pred = pred[ns:ns + nv_1 * ns].reshape(ns,-1)
+
+    if jacobian_2 is not None:
+        _, _, nv_2 = jacobian_2.shape
+        y_derivs2_pred = pred[ns + nv_1 * ns:ns + nv_1 * ns + nv_2 * ns].reshape(ns,-1)
+        return y_pred, y_derivs_pred, y_derivs2_pred
+    else:
+        return y_pred, y_derivs_pred
 
 
 def log_marginal_likelihood(
@@ -547,6 +774,8 @@ def log_marginal_likelihood(
     y: ArrayLike,
     jacobian: ArrayLike,
     y_derivs: ArrayLike,
+    jacobian_2: ArrayLike = None,
+    y_derivs2: ArrayLike = None,
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
@@ -560,7 +789,9 @@ def log_marginal_likelihood(
             x=x,
             y=y,
             jacobian=jacobian,
+            jacobian_2=jacobian_2,
             y_derivs=y_derivs,
+            y_derivs2=y_derivs2,
             kernel=state.kernel,
             mean_function=state.mean_function,
             num_evals=num_evals,
@@ -574,7 +805,9 @@ def log_marginal_likelihood(
         x=x,
         y=y,
         jacobian=jacobian,
+        jacobian_2=jacobian_2,
         y_derivs=y_derivs,
+        y_derivs2=y_derivs2,
         kernel=state.kernel,
         mean_function=state.mean_function,
     )
@@ -586,6 +819,8 @@ def neg_log_marginal_likelihood(
     y: ArrayLike,
     jacobian: ArrayLike,
     y_derivs: ArrayLike,
+    jacobian_2: ArrayLike = None,
+    y_derivs2: ArrayLike = None,
     iterative: Optional[bool] = False,
     num_evals: Optional[int] = gpxargs.num_evals,
     num_lanczos: Optional[int] = gpxargs.num_lanczos,
@@ -598,7 +833,9 @@ def neg_log_marginal_likelihood(
         x=x,
         y=y,
         jacobian=jacobian,
+        jacobian_2=jacobian_2,
         y_derivs=y_derivs,
+        y_derivs2=y_derivs2,
         iterative=iterative,
         num_evals=num_evals,
         num_lanczos=num_lanczos,
@@ -616,6 +853,7 @@ class GPR_TD:
         kernel_params: Dict[str, Parameter] = None,
         sigma_targets: Parameter = None,
         sigma_derivs: Parameter = None,
+        sigma_derivs2: Parameter = None,
         loss_fn: Callable = neg_log_marginal_likelihood,
     ) -> None:
 
@@ -623,13 +861,17 @@ class GPR_TD:
             "kernel_params": kernel_params,
             "sigma_targets": sigma_targets,
             "sigma_derivs": sigma_derivs,
+            "sigma_derivs2": sigma_derivs2,
         }
         opt = {
             "x_train": None,
             "jacobian_train": None,
+            "jacobian_train_2": None,
             "jaccoef": None,
+            "jaccoef_2": None,
             "y_train": None,
             "y_derivs_train": None,
+            "y_derivs_train2": None,
             "is_fitted": False,
             "c": None,
             "c_targets": None,
@@ -644,6 +886,8 @@ class GPR_TD:
         y: ArrayLike,
         jacobian: ArrayLike,
         y_derivs: ArrayLike,
+        jacobian_2: ArrayLike = None,
+        y_derivs2: ArrayLike = None,
         iterative: Optional[bool] = False,
         key: Optional[KeyArray] = None,
         num_restarts: Optional[int] = 0,
@@ -652,6 +896,7 @@ class GPR_TD:
         loss_kwargs: Optional[Dict] = None,
         n_pivots: Optional[int] = None,
         key_precond: Optional[KeyArray] = None,
+        c_guess: Optional[Array] = None,
     ) -> ModelState:
 
         if loss_kwargs is None:
@@ -670,6 +915,8 @@ class GPR_TD:
                 y=y,
                 jacobian=jacobian,
                 y_derivs=y_derivs,
+                jacobian_2=jacobian_2,
+                y_derivs2=y_derivs2,
                 loss_fn=loss_fn,
                 minimization_function=minimization_function,
                 num_restarts=num_restarts,
@@ -687,7 +934,7 @@ class GPR_TD:
                 )
 
         fit_func = (
-            partial(_fit_iter, n_pivots=n_pivots, key_precond=gpxargs.key_precond)
+            partial(_fit_iter, n_pivots=n_pivots, key_precond=gpxargs.key_precond, c_guess=c_guess)
             if iterative
             else _fit_dense
         )
@@ -697,23 +944,34 @@ class GPR_TD:
             x=x,
             y=y,
             jacobian=jacobian,
+            jacobian_2=jacobian_2,
             y_derivs=y_derivs,
+            y_derivs2=y_derivs2,
             kernel=self.state.kernel,
             mean_function=self.state.mean_function,
         )
-        ns, _, nv = jacobian.shape
+        ns, _, nv_1 = jacobian.shape
 
         c_targets = c[:ns].reshape(-1)
-        c_derivs = c[ns : ns + nv * ns]
-        jaccoef = jnp.einsum("sv,sfv->sf", c_derivs.reshape(ns, nv), jacobian)
+        c_derivs1 = c[ns : ns + nv_1 * ns]
+        jaccoef = jnp.einsum("sv,sfv->sf", c_derivs1.reshape(ns, nv_1), jacobian)
+        if jacobian_2 is not None:
+            _, _, nv_2 = jacobian_2.shape
+            c_derivs2 = c[ns + nv_1 * ns:ns + nv_1 * ns + nv_2 * ns]
+            jaccoef_2 = jnp.einsum("sv,sfv->sf", c_derivs2.reshape(ns, nv_2), jacobian_2)
+        else:
+            jaccoef_2 = None
 
         self.state = self.state.update(
             dict(
                 x_train=x,
                 y_train=y,
                 jacobian_train=jacobian,
+                jacobian_train_2=jacobian_2,
                 jaccoef=jaccoef,
-                y_derivs_train=y_derivs,
+                jaccoef_2=jaccoef_2,
+                y_derivs_train1=y_derivs,
+                y_derivs_train2=y_derivs2,
                 c=c,
                 c_targets=c_targets,
                 mu=mu,
@@ -731,6 +989,7 @@ class GPR_TD:
         self,
         x: ArrayLike,
         jacobian: ArrayLike,
+        jacobian_2: ArrayLike = None,
         iterative: Optional[bool] = False,
     ):
 
@@ -743,8 +1002,10 @@ class GPR_TD:
                 params=self.state.params,
                 x_train=self.state.x_train,
                 jacobian_train=self.state.jacobian_train,
+                jacobian_train_2=self.state.jacobian_train_2,
                 x=x,
                 jacobian=jacobian,
+                jacobian_2=jacobian_2,
                 c=self.state.c,
                 mu=self.state.mu,
                 kernel=self.state.kernel,
@@ -754,8 +1015,10 @@ class GPR_TD:
             params=self.state.params,
             x_train=self.state.x_train,
             jacobian_train=self.state.jacobian_train,
+            jacobian_train_2=self.state.jacobian_train_2,
             x=x,
             jacobian=jacobian,
+            jacobian_2=jacobian_2,
             c=self.state.c,
             mu=self.state.mu,
             kernel=self.state.kernel,
