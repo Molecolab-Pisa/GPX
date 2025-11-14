@@ -17,7 +17,7 @@ from functools import partial
 from typing import Dict
 
 import jax.numpy as jnp
-from jax import Array, custom_jvp, jit, lax
+from jax import Array, custom_jvp, jit
 from jax.typing import ArrayLike
 
 from ..bijectors import Identity, Softplus
@@ -398,7 +398,11 @@ def _polynomial_kernel(
 
 @jit
 def polynomial_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -407,29 +411,34 @@ def polynomial_kernel(
     return _polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def polynomial_kernel_symm(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None, nperms=None, predict=False,
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    nperms=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
-    
+
     nsp1, _ = x1.shape
     nsp2, _ = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
     if predict:
-        k = _polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset).reshape(
-            nsp1, ns2, nperms
-        )
-        return k.sum(axis=2) / nperms
+        k = _polynomial_kernel(
+            x1[:, active_dims], x2[:, active_dims], degree, offset
+        ).reshape(ns1, nperms, nsp2)
+        return k.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        k = _polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset).reshape(
-            ns1, nperms, ns2, nperms
-        )
+        ns2 = int(nsp2 / nperms)
+        k = _polynomial_kernel(
+            x1[:, active_dims], x2[:, active_dims], degree, offset
+        ).reshape(ns1, nperms, ns2, nperms)
         return k.sum(axis=1).sum(axis=2) / nperms**2
 
 
@@ -452,7 +461,11 @@ def _polynomial_kernel_d0k(
 
 @jit
 def polynomial_kernel_d0k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -461,9 +474,14 @@ def polynomial_kernel_d0k(
     return _polynomial_kernel_d0k(x1, x2, degree, offset, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def polynomial_kernel_d0k_symm(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None, nperms=None, predict=False
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    nperms=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -473,19 +491,19 @@ def polynomial_kernel_d0k_symm(
     nsp1, nf1 = x1.shape
     nsp2, _ = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
     if predict:
         ns1 = nsp1
-        d0k_all = _polynomial_kernel_d0k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, nf1, ns2, nperms)
-        d0k = d0k_all.sum(axis=3) / nperms
+        d0k_all = _polynomial_kernel_d0k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, nf1, nsp2
+        )
+        d0k = d0k_all.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        d0k_all = _polynomial_kernel_d0k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, nperms, nf1, ns2, nperms)
+        ns2 = int(nsp2 / nperms)
+        d0k_all = _polynomial_kernel_d0k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nperms
+        )
         d0k = d0k_all.sum(axis=1).sum(axis=3) / nperms**2
     return d0k.reshape(ns1 * nf1, ns2)
 
@@ -511,7 +529,11 @@ def _polynomial_kernel_d1k(
 
 @jit
 def polynomial_kernel_d1k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -520,9 +542,14 @@ def polynomial_kernel_d1k(
     return _polynomial_kernel_d1k(x1, x2, degree, offset, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def polynomial_kernel_d1k_symm(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None, nperms=None, predict=False,
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    nperms=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -532,19 +559,19 @@ def polynomial_kernel_d1k_symm(
     nsp1, _ = x1.shape
     nsp2, nf2 = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
     if predict:
-        ns1 = nsp1
-        d1k_all = _polynomial_kernel_d1k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, ns2, nperms, nf2)
-        d1k = d1k_all.sum(axis=2) / nperms
+        ns2 = nsp2
+        d1k_all = _polynomial_kernel_d1k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, ns2, nf2
+        )
+        d1k = d1k_all.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        d1k_all = _polynomial_kernel_d1k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, nperms, ns2, nperms, nf2)
+        ns2 = int(nsp2 / nperms)
+        d1k_all = _polynomial_kernel_d1k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, ns2, nperms, nf2
+        )
         d1k = d1k_all.sum(axis=1).sum(axis=2) / nperms**2
     return d1k.reshape(ns1, ns2 * nf2)
 
@@ -581,7 +608,11 @@ def _polynomial_kernel_d01k(
 
 @jit
 def polynomial_kernel_d01k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -590,9 +621,14 @@ def polynomial_kernel_d01k(
     return _polynomial_kernel_d01k(x1, x2, degree, offset, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def polynomial_kernel_d01k_symm(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None, nperms=None, predict=False
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    nperms=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -601,19 +637,19 @@ def polynomial_kernel_d01k_symm(
     nsp1, nf1 = x1.shape
     nsp2, nf2 = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
     if predict:
-        ns1 = nsp1
-        d01k_all = _polynomial_kernel_d01k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, nf1, ns2, nperms, nf2)
-        d01k = d01k_all.sum(axis=3) / nperms
+        ns2 = nsp2
+        d01k_all = _polynomial_kernel_d01k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nf2
+        )
+        d01k = d01k_all.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        d01k_all = _polynomial_kernel_d01k(
-            x1, x2, degree, offset, active_dims
-        ).reshape(ns1, nperms, nf1, ns2, nperms, nf2)
+        ns2 = int(nsp2 / nperms)
+        d01k_all = _polynomial_kernel_d01k(x1, x2, degree, offset, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nperms, nf2
+        )
         d01k = d01k_all.sum(axis=1).sum(axis=3) / nperms**2
     return d01k.reshape(ns1 * nf1, ns2 * nf2)
 
@@ -644,12 +680,46 @@ def polynomial_kernel_d0kj(
     params: Dict[str, Parameter],
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     return _polynomial_kernel_d0kj(x1, x2, degree, offset, jacobian, active_dims)
+
+
+def _polynomial_kernel_d0kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jaccoef: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, _ = jaccoef.shape
+    ns2, _ = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    d0kj = jnp.einsum("nm,fm,nf->nm", const, x2.T[active_dims], jaccoef[:, active_dims])
+    return d0kj.reshape(ns1, ns2)
+
+
+@jit
+def polynomial_kernel_d0kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    active_dims=None,
+    predict=False,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d0kjc(x1, x2, degree, offset, jaccoef, active_dims)
 
 
 def _polynomial_kernel_d0kj_symm(
@@ -660,37 +730,49 @@ def _polynomial_kernel_d0kj_symm(
     jacobian: ArrayLike,
     active_dims: ArrayLike,
     nperms: int,
-    predict: bool
+    predict: bool,
 ) -> Array:
     nsp1, nf1, nv1 = jacobian.shape
     nsp2, _ = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
+    jacobian = jacobian.reshape(ns1, nperms, nf1, nv1)
 
     if predict:
         const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
             degree - 1
         )
-        const = const.reshape(nsp1,ns2,nperms)
-        d0kj = jnp.einsum(
-                "nmq,fmq,nfv->nvm", const, x2.T[active_dims].reshape(-1,ns2,nperms), jacobian[:, active_dims]
-        ) / nperms
-        return d0kj.reshape(nsp1 * nv1, ns2)
+        const = const.reshape(ns1, nperms, nsp2)
+        d0kj = (
+            jnp.einsum(
+                "npm,fm,npfv->nvm",
+                const,
+                x2.T[active_dims],
+                jacobian[:, :, active_dims],
+            )
+            / nperms
+        )
+        return d0kj.reshape(ns1 * nv1, nsp2)
 
     else:
-        ns1 = int(nsp1 / nperms)
-        j = jacobian.reshape(ns1,nperms,nf1,nv1)
+        ns2 = int(nsp2 / nperms)
         const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
             degree - 1
         )
-        const = const.reshape(ns1,nperms,ns2,nperms)
-        d0kj = jnp.einsum(
-                "npmq,fmq,npfv->nvm", const, x2.T[active_dims].reshape(-1,ns2,nperms), j[:, :, active_dims]
-        ) / nperms ** 2
+        const = const.reshape(ns1, nperms, ns2, nperms)
+        d0kj = (
+            jnp.einsum(
+                "npmq,fmq,npfv->nvm",
+                const,
+                x2.T[active_dims].reshape(-1, ns2, nperms),
+                jacobian[:, :, active_dims],
+            )
+            / nperms**2
+        )
         return d0kj.reshape(ns1 * nv1, ns2)
 
 
-@partial(jit, static_argnums=(5,6))
+@partial(jit, static_argnums=(5, 6))
 def polynomial_kernel_d0kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -704,7 +786,69 @@ def polynomial_kernel_d0kj_symm(
     offset = params["offset"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
-    return _polynomial_kernel_d0kj_symm(x1, x2, degree, offset, jacobian, active_dims, nperms=nperms, predict=predict)
+    return _polynomial_kernel_d0kj_symm(
+        x1, x2, degree, offset, jacobian, active_dims, nperms=nperms, predict=predict
+    )
+
+
+def _polynomial_kernel_d0kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jaccoef: ArrayLike,
+    active_dims: ArrayLike,
+    nperms: int,
+    predict: bool,
+) -> Array:
+    nsp1, nf1 = jaccoef.shape
+    ns1 = int(nsp1 / nperms)
+    jaccoef = jaccoef.reshape(ns1, nperms, nf1)
+    nsp2, _ = x2.shape
+    const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    if predict:
+        const = const.reshape(ns1, nperms, nsp2)
+        d0kj = (
+            jnp.einsum(
+                "npm,fm,npf->nm", const, x2.T[active_dims], jaccoef[:, :, active_dims]
+            )
+            / nperms
+        )
+        return d0kj.reshape(ns1, nsp2)
+    else:
+        ns2 = int(nsp2 / nperms)
+        const = const.reshape(ns1, nperms, ns2, nperms)
+        d0kj = (
+            jnp.einsum(
+                "npmq,fmq,npf->nm",
+                const,
+                x2.T[active_dims].reshape(-1, ns2, nperms),
+                jaccoef[:, :, active_dims],
+            )
+            / nperms**2
+        )
+        return d0kj.reshape(ns1, ns2)
+
+
+@partial(jit, static_argnums=(5, 6))
+def polynomial_kernel_d0kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    active_dims=None,
+    nperms=None,
+    predict=False,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d0kjc_symm(
+        x1, x2, degree, offset, jaccoef, active_dims, nperms=nperms, predict=predict
+    )
 
 
 def _polynomial_kernel_d1kj(
@@ -733,6 +877,7 @@ def polynomial_kernel_d1kj(
     params: Dict[str, Parameter],
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -751,32 +896,43 @@ def _polynomial_kernel_d1kj_symm(
     nperms: int,
     predict: bool,
 ) -> Array:
-    nsp1, _ = x1.shape
+    nsp1, nf1 = x1.shape
     nsp2, nf2, nv2 = jacobian.shape
 
-    ns2 = int(nsp2 / nperms)
-
-    j = jacobian.reshape(ns2,nperms,nf2,nv2)
+    ns1 = int(nsp1 / nperms)
 
     const = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
         degree - 1
     )
     if predict:
-        const = const.reshape(nsp1,ns2,nperms)
-        d1kj = jnp.einsum(
-                "nmq,nf,mqfv->nmv", const, x1[:, active_dims], j[:, :, active_dims]
-        ) / nperms
-        return d1kj.reshape(nsp1, ns2 * nv2)
+        const = const.reshape(ns1, nperms, nsp2)
+        d1kj = (
+            jnp.einsum(
+                "npm,npf,mfv->nmv",
+                const,
+                x1[:, active_dims].reshape(ns1, nperms, -1),
+                jacobian[:, active_dims],
+            )
+            / nperms
+        )
+        return d1kj.reshape(ns1, nsp2 * nv2)
     else:
-        ns1 = int(nsp1 / nperms)
-        const = const.reshape(ns1,nperms,ns2,nperms)
-        d1kj = jnp.einsum(
-                "npmq,npf,mqfv->nmv", const, x1[:, active_dims].reshape(ns1,nperms,-1), j[:, :, active_dims]
-        ) / nperms**2
+        ns2 = int(nsp2 / nperms)
+        jacobian = jacobian.reshape(ns2, nperms, nf2, nv2)
+        const = const.reshape(ns1, nperms, ns2, nperms)
+        d1kj = (
+            jnp.einsum(
+                "npmq,npf,mqfv->nmv",
+                const,
+                x1[:, active_dims].reshape(ns1, nperms, -1),
+                jacobian[:, :, active_dims],
+            )
+            / nperms**2
+        )
         return d1kj.reshape(ns1, ns2 * nv2)
 
 
-@partial(jit, static_argnums=(5,6))
+@partial(jit, static_argnums=(5, 6))
 def polynomial_kernel_d1kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -790,7 +946,9 @@ def polynomial_kernel_d1kj_symm(
     offset = params["offset"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
-    return _polynomial_kernel_d1kj_symm(x1, x2, degree, offset, jacobian, active_dims, nperms=nperms, predict=predict)
+    return _polynomial_kernel_d1kj_symm(
+        x1, x2, degree, offset, jacobian, active_dims, nperms=nperms, predict=predict
+    )
 
 
 def _polynomial_kernel_d01kj(
@@ -836,6 +994,7 @@ def polynomial_kernel_d01kj(
     jacobian1: ArrayLike,
     jacobian2: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -860,9 +1019,9 @@ def _polynomial_kernel_d01kj_symm(
     nsp1, nf1, nv1 = jacobian1.shape
     nsp2, nf2, nv2 = jacobian2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
-    j2 = jacobian2.reshape(ns2,nperms,nf2,nv2)
+    jacobian1 = jacobian1.reshape(ns1, nperms, nf1, nv1)
 
     nact = active_dims.shape[0]
     const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
@@ -880,26 +1039,32 @@ def _polynomial_kernel_d01kj_symm(
     )
     tmp2 = jnp.einsum("nf,nm,me->nemf", x1[:, active_dims], const2, x2[:, active_dims])
     if predict:
-        d01kj = jnp.einsum(
-            "nfv,nfmqe,mqeu->nvmu",
-            jacobian1[:, active_dims],
-            (tmp1 + tmp2).reshape(nsp1,nact,ns2,nperms,nact),
-            j2[:, :, active_dims],
-        ) / nperms
-        return d01kj.reshape(nsp1 * nv1, ns2 * nv2)
+        d01kj = (
+            jnp.einsum(
+                "npfv,npfme,meu->nvmu",
+                jacobian1[:, :, active_dims],
+                (tmp1 + tmp2).reshape(ns1, nperms, nact, nsp2, nact),
+                jacobian2[:, active_dims],
+            )
+            / nperms
+        )
+        return d01kj.reshape(ns1 * nv1, nsp2 * nv2)
     else:
-        ns1 = int(nsp1 / nperms)
-        j1 = jacobian1.reshape(ns1,nperms,nf1,nv1)
-        d01kj = jnp.einsum(
-            "npfv,npfmqe,mqeu->nvmu",
-            j1[:, :, active_dims],
-            (tmp1 + tmp2).reshape(ns1,nperms,nact,ns2,nperms,nact),
-            j2[:, :, active_dims],
-        ) / nperms**2
+        ns2 = int(nsp2 / nperms)
+        jacobian2 = jacobian2.reshape(ns2, nperms, nf2, nv2)
+        d01kj = (
+            jnp.einsum(
+                "npfv,npfmqe,mqeu->nvmu",
+                jacobian1[:, :, active_dims],
+                (tmp1 + tmp2).reshape(ns1, nperms, nact, ns2, nperms, nact),
+                jacobian2[:, :, active_dims],
+            )
+            / nperms**2
+        )
         return d01kj.reshape(ns1 * nv1, ns2 * nv2)
 
 
-@partial(jit, static_argnums=(6,7))
+@partial(jit, static_argnums=(6, 7))
 def polynomial_kernel_d01kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -915,7 +1080,15 @@ def polynomial_kernel_d01kj_symm(
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     return _polynomial_kernel_d01kj_symm(
-        x1, x2, degree, offset, jacobian1, jacobian2, active_dims, nperms, predict=predict
+        x1,
+        x2,
+        degree,
+        offset,
+        jacobian1,
+        jacobian2,
+        active_dims,
+        nperms,
+        predict=predict,
     )
 
 
@@ -962,6 +1135,7 @@ def polynomial_kernel_d01kjc(
     jaccoef: ArrayLike,
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -969,6 +1143,92 @@ def polynomial_kernel_d01kjc(
         active_dims = jnp.arange(x1.shape[1])
     return _polynomial_kernel_d01kjc(
         x1, x2, degree, offset, jaccoef, jacobian, active_dims
+    )
+
+
+def _polynomial_kernel_d01kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    degree: ArrayLike,
+    offset: ArrayLike,
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+    nperms: int,
+    predict: bool,
+) -> Array:
+    nsp1, nf1 = jaccoef.shape
+    nsp2, nf2, nv2 = jacobian.shape
+
+    ns1 = int(nsp1 / nperms)
+    jaccoef = jaccoef.reshape(ns1, nperms, nf1)
+
+    nact = active_dims.shape[0]
+    const1 = degree * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (
+        degree - 1
+    )
+    const2 = (
+        degree
+        * (degree - 1)
+        * (offset + x1[:, active_dims] @ x2[:, active_dims].T) ** (degree - 2)
+    )
+    tmp1 = jnp.einsum(
+        "nm,nfme->nfme",
+        const1,
+        jnp.tile(jnp.eye((nact)), (nsp1, nsp2)).reshape(nsp1, nact, nsp2, nact),
+    )
+    tmp2 = jnp.einsum("nf,nm,me->nemf", x1[:, active_dims], const2, x2[:, active_dims])
+    if predict:
+        d01kjc = (
+            jnp.einsum(
+                "npf,npfme,meu->nmu",
+                jaccoef[:, :, active_dims],
+                (tmp1 + tmp2).reshape(ns1, nperms, nact, nsp2, nact),
+                jacobian[:, active_dims],
+            )
+            / nperms
+        )
+        return d01kjc.reshape(ns1, nsp2 * nv2)
+    else:
+        ns2 = int(nsp2 / nperms)
+        jacobian = jacobian.reshape(ns2, nperms, nf2, nv2)
+        d01kjc = (
+            jnp.einsum(
+                "npf,npfmqe,mqeu->nmu",
+                jaccoef[:, :, active_dims],
+                tmp1 + tmp2.reshape(ns1, nperms, nact, nsp2, nact),
+                jacobian[:, :, active_dims],
+            )
+            / nperms**2
+        )
+        return d01kjc.reshape(ns1, ns2 * nv2)
+
+
+@partial(jit, static_argnums=(6, 7))
+def polynomial_kernel_d01kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims=None,
+    nperms=None,
+    predict=False,
+) -> Array:
+    degree = params["degree"].value
+    offset = params["offset"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _polynomial_kernel_d01kjc_symm(
+        x1,
+        x2,
+        degree,
+        offset,
+        jaccoef,
+        jacobian,
+        active_dims,
+        nperms=nperms,
+        predict=predict,
     )
 
 
@@ -985,7 +1245,10 @@ def _no_intercept_polynomial_kernel_base(
 
 @jit
 def no_intercept_polynomial_kernel_base(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -1004,7 +1267,11 @@ def _no_intercept_polynomial_kernel(
 
 @jit
 def no_intercept_polynomial_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -1015,9 +1282,14 @@ def no_intercept_polynomial_kernel(
     )
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def no_intercept_polynomial_kernel_symm(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None, nperms=None, predict=False,
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    nperms=None,
+    predict=False,
 ) -> Array:
     degree = params["degree"].value
     offset = params["offset"].value
@@ -1025,17 +1297,17 @@ def no_intercept_polynomial_kernel_symm(
         active_dims = jnp.arange(x1.shape[1])
     nsp1, _ = x1.shape
     nsp2, _ = x2.shape
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
     if predict:
-        k = _no_intercept_polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset).reshape(
-            nsp1, ns2, nperms
-        )
-        return k.sum(axis=2) / nperms
+        k = _no_intercept_polynomial_kernel(
+            x1[:, active_dims], x2[:, active_dims], degree, offset
+        ).reshape(ns1, nperms, nsp2)
+        return k.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        k = _no_intercept_polynomial_kernel(x1[:, active_dims], x2[:, active_dims], degree, offset).reshape(
-            ns1, nperms, ns2, nperms
-        )
+        ns2 = int(nsp2 / nperms)
+        k = _no_intercept_polynomial_kernel(
+            x1[:, active_dims], x2[:, active_dims], degree, offset
+        ).reshape(ns1, nperms, ns2, nperms)
         return k.sum(axis=1).sum(axis=2) / nperms**2
 
 
@@ -1373,7 +1645,11 @@ def _matern52_kernel(x1: ArrayLike, x2: ArrayLike, lengthscale: ArrayLike) -> Ar
 
 @jit
 def matern52_kernel(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1381,7 +1657,7 @@ def matern52_kernel(
     return _matern52_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def matern52_kernel_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -1397,17 +1673,17 @@ def matern52_kernel_symm(
     nsp1, _ = x1.shape
     nsp2, _ = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
     if predict:
-        k = _matern52_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale).reshape(
-            nsp1, ns2, nperms
-        )
-        return k.sum(axis=2) / nperms
+        k = _matern52_kernel(
+            x1[:, active_dims], x2[:, active_dims], lengthscale
+        ).reshape(ns1, nperms, nsp2)
+        return k.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        k = _matern52_kernel(x1[:, active_dims], x2[:, active_dims], lengthscale).reshape(
-            ns1, nperms, ns2, nperms
-        )
+        ns2 = int(nsp2 / nperms)
+        k = _matern52_kernel(
+            x1[:, active_dims], x2[:, active_dims], lengthscale
+        ).reshape(ns1, nperms, ns2, nperms)
         return k.sum(axis=1).sum(axis=2) / nperms**2
 
 
@@ -1470,7 +1746,11 @@ def _matern52_kernel_d0k(
 
 @jit
 def matern52_kernel_d0k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1478,14 +1758,14 @@ def matern52_kernel_d0k(
     return _matern52_kernel_d0k(x1, x2, lengthscale, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def matern52_kernel_d0k_symm(
     x1: ArrayLike,
     x2: ArrayLike,
     params: Dict[str, Parameter],
     active_dims=None,
     nperms=None,
-    predict=False
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1494,19 +1774,18 @@ def matern52_kernel_d0k_symm(
     nsp1, nf1 = x1.shape
     nsp2, _ = x2.shape
 
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
     if predict:
-        ns1 = nsp1
-        d0k_all = _matern52_kernel_d0k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(nsp1, nf1, ns2, nperms)
-        d0k = d0k_all.sum(axis=3) / nperms
+        d0k_all = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, nsp2
+        )
+        d0k = d0k_all.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        d0k_all = _matern52_kernel_d0k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(ns1, nperms, nf1, ns2, nperms)
+        ns2 = int(nsp2 / nperms)
+        d0k_all = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nperms
+        )
         d0k = d0k_all.sum(axis=1).sum(axis=3) / nperms**2
     return d0k.reshape(ns1 * nf1, ns2)
 
@@ -1535,6 +1814,7 @@ def matern52_kernel_d0kj(
     params: Dict[str, Parameter],
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1549,37 +1829,42 @@ def _matern52_kernel_d0kj_symm(
     jacobian: ArrayLike,
     active_dims: ArrayLike,
     nperms: int,
-    predict: bool
+    predict: bool,
 ) -> Array:
-    nsp1, nf1 = x1.shape
+    nsp1, nf1, nv1 = jacobian.shape
     nsp2, _ = x2.shape
-    ns2 = int(nsp2 / nperms)
-    _, _, nv = jacobian.shape
+    ns1 = int(nsp1 / nperms)
+    jacobian = jacobian.reshape(ns1, nperms, nf1, nv1)
 
     if predict:
         d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
-            nsp1, nf1, ns2, nperms
+            ns1, nperms, nf1, nsp2
         )
         d0kj = (
-            jnp.einsum("ifv,ifjq->ivj", jacobian[:, active_dims, :], d0k[:, active_dims])
+            jnp.einsum(
+                "ipfv,ipfj->ivj", jacobian[:, :, active_dims, :], d0k[:, :, active_dims]
+            )
             / nperms
         )
-        return d0kj.reshape(nsp1 * nv, ns2)
+        return d0kj.reshape(ns1 * nv1, nsp2)
 
     else:
-        ns1 = int(nsp1 / nperms)
-        j = jacobian.reshape(ns1, nperms, nf1, nv)
+        ns2 = int(nsp2 / nperms)
         d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
             ns1, nperms, nf1, ns2, nperms
         )
         d0kj = (
-            jnp.einsum("ipfv,ipfjq->ivj", j[:, :, active_dims, :], d0k[:, :, active_dims])
+            jnp.einsum(
+                "ipfv,ipfjq->ivj",
+                jacobian[:, :, active_dims, :],
+                d0k[:, :, active_dims],
+            )
             / nperms**2
         )
-        return d0kj.reshape(ns1 * nv, ns2)
+        return d0kj.reshape(ns1 * nv1, ns2)
 
 
-@partial(jit, static_argnums=(5,6))
+@partial(jit, static_argnums=(5, 6))
 def matern52_kernel_d0kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -1594,6 +1879,91 @@ def matern52_kernel_d0kj_symm(
         active_dims = jnp.arange(x1.shape[1])
     return _matern52_kernel_d0kj_symm(
         x1, x2, lengthscale, jacobian, active_dims, nperms=nperms, predict=predict
+    )
+
+
+def _matern52_kernel_d0kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jaccoef: ArrayLike,
+    active_dims: ArrayLike,
+) -> Array:
+    ns1, nf1 = x1.shape
+    ns2, _ = x2.shape
+    d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(ns1, nf1, ns2)
+    d0kj = jnp.einsum("if,ifj->ij", jaccoef[:, active_dims], d0k[:, active_dims, :])
+    return d0kj.reshape(ns1, ns2)
+
+
+@jit
+def matern52_kernel_d0kjc(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    active_dims=None,
+    predict=False,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d0kjc(x1, x2, lengthscale, jaccoef, active_dims)
+
+
+def _matern52_kernel_d0kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jaccoef: ArrayLike,
+    active_dims: ArrayLike,
+    nperms: int,
+    predict: bool,
+) -> Array:
+    nsp1, nf1 = jaccoef.shape
+    ns1 = int(nsp1 / nperms)
+    jaccoef = jaccoef.reshape(ns1, nperms, nf1)
+    nsp2, _ = x2.shape
+    if predict:
+        d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, nsp2
+        )
+        d0kj = (
+            jnp.einsum(
+                "ipf,ipfj->ij", jaccoef[:, :, active_dims], d0k[:, :, active_dims, :]
+            )
+            / nperms
+        )
+        return d0kj.reshape(ns1, nsp2)
+    else:
+        ns2 = int(nsp2 / nperms)
+        d0k = _matern52_kernel_d0k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nperms
+        )
+        d0kj = (
+            jnp.einsum(
+                "ipf,ipfjq->ij", jaccoef[:, :, active_dims], d0k[:, :, active_dims, :]
+            )
+            / nperms**2
+        )
+        return d0kj.reshape(ns1, ns2)
+
+
+@partial(jit, static_argnums=(5, 6))
+def matern52_kernel_d0kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    active_dims=None,
+    nperms=None,
+    predict=False,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d0kjc_symm(
+        x1, x2, lengthscale, jaccoef, active_dims, nperms=nperms, predict=predict
     )
 
 
@@ -1616,7 +1986,11 @@ def _matern52_kernel_d1k(
 
 @jit
 def matern52_kernel_d1k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1624,14 +1998,14 @@ def matern52_kernel_d1k(
     return _matern52_kernel_d1k(x1, x2, lengthscale, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def matern52_kernel_d1k_symm(
     x1: ArrayLike,
     x2: ArrayLike,
     params: Dict[str, Parameter],
     active_dims=None,
     nperms=None,
-    predict=False
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1644,15 +2018,15 @@ def matern52_kernel_d1k_symm(
 
     if predict:
         ns1 = nsp1
-        d0k_all = _matern52_kernel_d1k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(ns1, ns2, nperms, nf2)
+        d0k_all = _matern52_kernel_d1k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, ns2, nperms, nf2
+        )
         d0k = d0k_all.sum(axis=2) / nperms
     else:
         ns1 = int(nsp1 / nperms)
-        d0k_all = _matern52_kernel_d1k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(ns1, nperms, ns2, nperms, nf2)
+        d0k_all = _matern52_kernel_d1k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, ns2, nperms, nf2
+        )
         d0k = d0k_all.sum(axis=1).sum(axis=2) / nperms**2
     return d0k.reshape(ns1, ns2 * nf2)
 
@@ -1681,6 +2055,7 @@ def matern52_kernel_d1kj(
     params: Dict[str, Parameter],
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1698,36 +2073,37 @@ def _matern52_kernel_d1kj_symm(
     predict: bool,
 ) -> Array:
     nsp1, _ = x1.shape
-    nsp2, nf2 = x2.shape
-    ns2 = int(nsp2 / nperms)
-    _, _, nv = jacobian.shape
-    j = jacobian.reshape(ns2, nperms, nf2, nv)
+    nsp2, nf2, nv2 = jacobian.shape
+    ns1 = int(nsp1 / nperms)
     if predict:
         d1k = _matern52_kernel_d1k(x1, x2, lengthscale, active_dims).reshape(
-            nsp1, ns2, nperms, nf2
+            ns1, nperms, nsp2, nf2
         )
         d1kj = (
             jnp.einsum(
-                "ijqf,jqfv->ijv", d1k[:, :, :, active_dims], j[:, :, active_dims]
+                "ipjf,jfv->ijv", d1k[:, :, :, active_dims], jacobian[:, active_dims]
             )
             / nperms
         )
-        return d1kj.reshape(nsp1, ns2 * nv)
+        return d1kj.reshape(ns1, nsp2 * nv2)
     else:
-        ns1 = int(nsp1 / nperms)
+        ns2 = int(nsp2 / nperms)
+        jacobian = jacobian.reshape(ns2, nperms, nf2, nv2)
         d1k = _matern52_kernel_d1k(x1, x2, lengthscale, active_dims).reshape(
             ns1, nperms, ns2, nperms, nf2
         )
         d1kj = (
             jnp.einsum(
-                "ipjqf,jqfv->ijv", d1k[:, :, :, :, active_dims], j[:, :, active_dims]
+                "ipjqf,jqfv->ijv",
+                d1k[:, :, :, :, active_dims],
+                jacobian[:, :, active_dims],
             )
             / nperms**2
         )
-        return d1kj.reshape(ns1, ns2 * nv)
+        return d1kj.reshape(ns1, ns2 * nv2)
 
 
-@partial(jit, static_argnums=(5,6))
+@partial(jit, static_argnums=(5, 6))
 def matern52_kernel_d1kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -1739,7 +2115,7 @@ def matern52_kernel_d1kj_symm(
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
-        active_dims = jnp.arange(x1.shape[1])
+        active_dims = jnp.arange(x2.shape[1])
     return _matern52_kernel_d1kj_symm(
         x1, x2, lengthscale, jacobian, active_dims, nperms=nperms, predict=predict
     )
@@ -1766,7 +2142,11 @@ def _matern52_kernel_d01k(
 
 @jit
 def matern52_kernel_d01k(
-    x1: ArrayLike, x2: ArrayLike, params: Dict[str, Parameter], active_dims=None
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    active_dims=None,
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1774,33 +2154,32 @@ def matern52_kernel_d01k(
     return _matern52_kernel_d01k(x1, x2, lengthscale, active_dims)
 
 
-@partial(jit, static_argnums=(4,5))
+@partial(jit, static_argnums=(4, 5))
 def matern52_kernel_d01k_symm(
     x1: ArrayLike,
     x2: ArrayLike,
     params: Dict[str, Parameter],
     active_dims=None,
     nperms=None,
-    predict=False
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     nsp1, nf1 = x1.shape
     nsp2, nf2 = x2.shape
-    ns2 = int(nsp2 / nperms)
+    ns1 = int(nsp1 / nperms)
 
     if predict:
-        ns1 = nsp1
-        d01k_all = _matern52_kernel_d01k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(ns1, nf1, ns2, nperms, nf2)
-        d01k = d01k_all.sum(axis=3) / nperms
+        d01k_all = _matern52_kernel_d01k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, nsp2, nf2
+        )
+        d01k = d01k_all.sum(axis=1) / nperms
     else:
-        ns1 = int(nsp1 / nperms)
-        d01k_all = _matern52_kernel_d01k(
-            x1, x2, lengthscale, active_dims
-        ).reshape(ns1, nperms, nf1, ns2, nperms, nf2)
+        ns2 = int(nsp2 / nperms)
+        d01k_all = _matern52_kernel_d01k(x1, x2, lengthscale, active_dims).reshape(
+            ns1, nperms, nf1, ns2, nperms, nf2
+        )
         d01k = d01k_all.sum(axis=1).sum(axis=3) / nperms**2
     return d01k.reshape(ns1 * nf1, ns2 * nf2)
 
@@ -1846,6 +2225,7 @@ def matern52_kernel_d01kj(
     jacobian1: ArrayLike,
     jacobian2: ArrayLike,
     active_dims=None,
+    predict=False,
 ):
     lengthscale = params["lengthscale"].value
     if active_dims is None:
@@ -1863,45 +2243,46 @@ def _matern52_kernel_d01kj_symm(
     jacobian2: ArrayLike,
     active_dims: ArrayLike,
     nperms: int,
-    predict
+    predict: bool,
 ) -> Array:
 
-    ns2p, nf2, nv2 = jacobian2.shape
-    ns2 = int(ns2p / nperms)
-    j2 = jacobian2.reshape(ns2, nperms, nf2, nv2)
+    nsp1, nf1, nv1 = jacobian1.shape
+    ns1 = int(nsp1 / nperms)
+    jacobian1 = jacobian1.reshape(ns1, nperms, nf1, nv1)
+
+    nsp2, nf2, nv2 = jacobian2.shape
 
     nact = active_dims.shape[0]
     z1 = x1[:, active_dims] / lengthscale
     z2 = x2[:, active_dims] / lengthscale
     if predict:
-        ns1, nf1, nv1 = jacobian1.shape
-        j1 = jacobian1
-
         diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2).reshape(
-            ns1, ns2, nperms, nact
+            ns1, nperms, nsp2, nact
         )
-        d2 = squared_distances(z1, z2).reshape(ns1, ns2, nperms)
+        d2 = squared_distances(z1, z2).reshape(ns1, nperms, nsp2)
         d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36))
         constant = ((5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)).reshape(
-            ns1, ns2, nperms
+            ns1, nperms, nsp2
         )
-        diff_j1 = jnp.einsum("stqf,sfv->stqv", diff, j1[:, active_dims])
-        diff_j2 = jnp.einsum("stqf,tqfu->stqu", diff, j2[:, :, active_dims])
-        d01kj = jnp.einsum("stq,stqv,stqu->svtu", -constant, diff_j1, diff_j2)
+        diff_j1 = jnp.einsum("sptf,spfv->sptv", diff, jacobian1[:, :, active_dims])
+        diff_j2 = jnp.einsum("sptf,tfu->sptu", diff, jacobian2[:, active_dims])
+        d01kj = jnp.einsum("spt,sptv,sptu->svtu", -constant, diff_j1, diff_j2)
         diag = constant * (1.0 + d)
         diag = diag[:, :, :, jnp.newaxis].repeat(nact, axis=3)
         diag = jnp.einsum(
-                "sfv,stqf,tqfu->svtu", j1[:, active_dims], diag, j2[:, :, active_dims]
+            "spfv,sptf,tfu->svtu",
+            jacobian1[:, :, active_dims],
+            diag,
+            jacobian2[:, active_dims],
         )
         d01kj = d01kj + diag
         # output a square kernel, samples time variables
-        d01kj = d01kj.reshape(ns1 * nv1, ns2 * nv2)
+        d01kj = d01kj.reshape(ns1 * nv1, nsp2 * nv2)
         return d01kj / nperms
 
     else:
-        ns1p, nf1, nv1 = jacobian1.shape
-        ns1 = int(ns1p / nperms)
-        j1 = jacobian1.reshape(ns1, nperms, nf1, nv1)
+        ns2 = int(nsp2 / nperms)
+        jacobian2 = jacobian2.reshape(ns2, nperms, nf2, nv2)
 
         diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2).reshape(
             ns1, nperms, ns2, nperms, nact
@@ -1911,13 +2292,16 @@ def _matern52_kernel_d01kj_symm(
         constant = ((5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)).reshape(
             ns1, nperms, ns2, nperms
         )
-        diff_j1 = jnp.einsum("sptqf,spfv->sptqv", diff, j1[:, :, active_dims])
-        diff_j2 = jnp.einsum("sptqf,tqfu->sptqu", diff, j2[:, :, active_dims])
+        diff_j1 = jnp.einsum("sptqf,spfv->sptqv", diff, jacobian1[:, :, active_dims])
+        diff_j2 = jnp.einsum("sptqf,tqfu->sptqu", diff, jacobian2[:, :, active_dims])
         d01kj = jnp.einsum("sptq,sptqv,sptqu->svtu", -constant, diff_j1, diff_j2)
         diag = constant * (1.0 + d)
         diag = diag[:, :, :, :, jnp.newaxis].repeat(nact, axis=4)
         diag = jnp.einsum(
-            "spfv,sptqf,tqfu->svtu", j1[:, :, active_dims], diag, j2[:, :, active_dims]
+            "spfv,sptqf,tqfu->svtu",
+            jacobian1[:, :, active_dims],
+            diag,
+            jacobian2[:, :, active_dims],
         )
         d01kj = d01kj + diag
         # output a square kernel, samples time variables
@@ -1925,7 +2309,7 @@ def _matern52_kernel_d01kj_symm(
         return d01kj / nperms**2
 
 
-@partial(jit, static_argnums=(6,7))
+@partial(jit, static_argnums=(6, 7))
 def matern52_kernel_d01kj_symm(
     x1: ArrayLike,
     x2: ArrayLike,
@@ -1984,11 +2368,108 @@ def matern52_kernel_d01kjc(
     jaccoef: ArrayLike,
     jacobian: ArrayLike,
     active_dims=None,
+    predict=False,
 ) -> Array:
     lengthscale = params["lengthscale"].value
     if active_dims is None:
         active_dims = jnp.arange(x1.shape[1])
     return _matern52_kernel_d01kjc(x1, x2, lengthscale, jaccoef, jacobian, active_dims)
+
+
+def _matern52_kernel_d01kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    lengthscale: ArrayLike,
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims: ArrayLike,
+    nperms: int,
+    predict: bool,
+) -> Array:
+
+    ns1p, nf1 = jaccoef.shape
+    ns1 = int(ns1p / nperms)
+    jaccoef = jaccoef.reshape(ns1, nperms, nf1)
+
+    nsp2, nf2, nv2 = jacobian.shape
+
+    nact = active_dims.shape[0]
+    z1 = x1[:, active_dims] / lengthscale
+    z2 = x2[:, active_dims] / lengthscale
+    if predict:
+        diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2).reshape(
+            ns1, nperms, nsp2, nact
+        )
+        d2 = squared_distances(z1, z2)
+        d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36)).reshape(ns1, nperms, nsp2)
+        constant = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)
+        diff_j1 = jnp.einsum("sptf,spf->spt", diff, jaccoef[:, :, active_dims])
+        diff_j2 = jnp.einsum("sptf,tfv->sptv", diff, jacobian[:, active_dims])
+        d01kj = jnp.einsum("spt,spt,sptv->stv", -constant, diff_j1, diff_j2)
+        diag = constant * (1.0 + d)
+        diag = diag[:, :, :, jnp.newaxis].repeat(nact, axis=3)
+        diag = jnp.einsum(
+            "spf,sptf,tfv->stv",
+            jaccoef[:, :, active_dims],
+            diag,
+            jacobian[:, active_dims],
+        )
+        d01kj = d01kj + diag
+        # output a square kernel, samples time variables
+        d01kj = d01kj.reshape(ns1, nsp2 * nv2)
+        return d01kj / nperms
+    else:
+        ns2 = int(nsp2 / nperms)
+        jacobian = jacobian.reshape(ns2, nperms, nf2, nv2)
+        diff = jnp.sqrt(5.0) * (z1[:, jnp.newaxis] - z2).reshape(
+            ns1, nperms, ns2, nperms, nact
+        )
+        d2 = squared_distances(z1, z2).reshape(ns1, nperms, ns2, nperms)
+        d = jnp.sqrt(5.0) * jnp.sqrt(jnp.maximum(d2, 1e-36)).reshape(
+            ns1, nperms, ns2, nperms
+        )
+        constant = (5.0 / (3.0 * lengthscale**2)) * jnp.exp(-d)
+        diff_j1 = jnp.einsum("sptqf,spf->sptq", diff, jaccoef[:, :, active_dims])
+        diff_j2 = jnp.einsum("sptqf,tqfv->sptqv", diff, jacobian[:, :, active_dims])
+        d01kj = jnp.einsum("sptq,sptq,sptqv->stv", -constant, diff_j1, diff_j2)
+        diag = constant * (1.0 + d)
+        diag = diag[:, :, :, jnp.newaxis].repeat(nact, axis=3)
+        diag = jnp.einsum(
+            "spf,sptqf,tqfv->stv",
+            jaccoef[:, :, active_dims],
+            diag,
+            jacobian[:, :, active_dims],
+        )
+        d01kj = d01kj + diag
+        # output a square kernel, samples time variables
+        d01kj = d01kj.reshape(ns1, ns2 * nv2)
+        return d01kj / nperms**2
+
+
+@partial(jit, static_argnums=(6, 7))
+def matern52_kernel_d01kjc_symm(
+    x1: ArrayLike,
+    x2: ArrayLike,
+    params: Dict[str, Parameter],
+    jaccoef: ArrayLike,
+    jacobian: ArrayLike,
+    active_dims=None,
+    nperms=None,
+    predict=False,
+) -> Array:
+    lengthscale = params["lengthscale"].value
+    if active_dims is None:
+        active_dims = jnp.arange(x1.shape[1])
+    return _matern52_kernel_d01kjc_symm(
+        x1,
+        x2,
+        lengthscale,
+        jaccoef,
+        jacobian,
+        active_dims,
+        nperms=nperms,
+        predict=predict,
+    )
 
 
 # =============================================================================
@@ -2222,7 +2703,10 @@ class Polynomial(Kernel):
     """
 
     def __init__(
-            self, active_dims: ArrayLike = None, no_intercept: bool = False, nperms: int = None
+        self,
+        active_dims: ArrayLike = None,
+        no_intercept: bool = False,
+        nperms: int = None,
     ) -> None:
         if no_intercept:
             self._kernel_base = no_intercept_polynomial_kernel_base
@@ -2234,25 +2718,51 @@ class Polynomial(Kernel):
 
             # faster version for evaluating k
             if no_intercept:
-                self.k = partial(no_intercept_polynomial_kernel_symm, active_dims=active_dims, nperms=nperms)
+                self.k = partial(
+                    no_intercept_polynomial_kernel_symm,
+                    active_dims=active_dims,
+                    nperms=nperms,
+                )
             else:
-                self.k = partial(polynomial_kernel_symm, active_dims=active_dims, nperms=nperms)
+                self.k = partial(
+                    polynomial_kernel_symm, active_dims=active_dims, nperms=nperms
+                )
 
             # faster gradients/hessians
-            self.d0k = partial(polynomial_kernel_d0k_symm, active_dims=active_dims, nperms=nperms)
-            self.d1k = partial(polynomial_kernel_d1k_symm, active_dims=active_dims, nperms=nperms)
-            self.d01k = partial(polynomial_kernel_d01k_symm, active_dims=active_dims, nperms=nperms)
+            self.d0k = partial(
+                polynomial_kernel_d0k_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d1k = partial(
+                polynomial_kernel_d1k_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d01k = partial(
+                polynomial_kernel_d01k_symm, active_dims=active_dims, nperms=nperms
+            )
 
             # faster gradients/hessian-jacobian products
-            self.d0kj = partial(polynomial_kernel_d0kj_symm, active_dims=active_dims, nperms=nperms)
-            self.d1kj = partial(polynomial_kernel_d1kj_symm, active_dims=active_dims, nperms=nperms)
-            self.d01kj = partial(polynomial_kernel_d01kj_symm, active_dims=active_dims, nperms=nperms)
+            self.d0kj = partial(
+                polynomial_kernel_d0kj_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d1kj = partial(
+                polynomial_kernel_d1kj_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d01kj = partial(
+                polynomial_kernel_d01kj_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d0kjc = partial(
+                polynomial_kernel_d0kjc_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d01kjc = partial(
+                polynomial_kernel_d01kjc_symm, active_dims=active_dims, nperms=nperms
+            )
 
         else:
 
             # faster version for evaluating k
             if no_intercept:
-                self.k = partial(no_intercept_polynomial_kernel, active_dims=active_dims)
+                self.k = partial(
+                    no_intercept_polynomial_kernel, active_dims=active_dims
+                )
             else:
                 self.k = partial(polynomial_kernel, active_dims=active_dims)
 
@@ -2267,6 +2777,7 @@ class Polynomial(Kernel):
             self.d01kj = partial(polynomial_kernel_d01kj, active_dims=active_dims)
 
             # faster hessian-jaccoef
+            self.d0kjc = partial(polynomial_kernel_d0kjc, active_dims=active_dims)
             self.d01kjc = partial(polynomial_kernel_d01kjc, active_dims=active_dims)
 
     def default_params(self):
@@ -2420,6 +2931,12 @@ class Matern52(Kernel):
             self.d01kj = partial(
                 matern52_kernel_d01kj_symm, active_dims=active_dims, nperms=nperms
             )
+            self.d0kjc = partial(
+                matern52_kernel_d0kjc_symm, active_dims=active_dims, nperms=nperms
+            )
+            self.d01kjc = partial(
+                matern52_kernel_d01kjc_symm, active_dims=active_dims, nperms=nperms
+            )
         else:
             self.k = partial(matern52_kernel, active_dims=active_dims)
 
@@ -2434,6 +2951,7 @@ class Matern52(Kernel):
             self.d01kj = partial(matern52_kernel_d01kj, active_dims=active_dims)
 
             # faster hessian-jaccoef
+            self.d0kjc = partial(matern52_kernel_d0kjc, active_dims=active_dims)
             self.d01kjc = partial(matern52_kernel_d01kjc, active_dims=active_dims)
 
     def default_params(self):

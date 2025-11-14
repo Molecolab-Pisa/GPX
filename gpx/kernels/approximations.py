@@ -75,7 +75,13 @@ def rpcholesky(
     """
 
     # x is (number of points, number of features)
-    n, _ = x.shape
+    if kernel.nperms is not None:
+        nperms = kernel.nperms
+        np, nf = x.shape
+        n = int(np / nperms)
+        x = x.reshape(n, nperms, nf)
+    else:
+        n, _ = x.shape
 
     # factor matrix (F)
     fmat = jnp.zeros((n, n_pivots))
@@ -86,7 +92,8 @@ def rpcholesky(
     # compute the diagonal
     def diagonal_wrapper(init, x):
         # ensure that each point is (1,)
-        x = jnp.expand_dims(x, axis=0)
+        if kernel.nperms is None:
+            x = jnp.expand_dims(x, axis=0)
         return init, kernel(x, x, kernel_params).squeeze()
 
     _, diag = jax.lax.scan(diagonal_wrapper, init=0, xs=x)
@@ -106,9 +113,12 @@ def rpcholesky(
         # compute the schur complement g
         # note: we are unable to select only a few columns of F due to
         #       the compilation within lax.fori_loop
-        g = kernel(jnp.expand_dims(x[s], axis=0), x, kernel_params) - jnp.dot(
-            fmat, fmat[s].T
-        )
+        if kernel.nperms is None:
+            xs = jnp.expand_dims(x[s], axis=0)
+            g = kernel(xs, x, kernel_params) - jnp.dot(fmat, fmat[s].T)
+        else:
+            xs = x[s]
+            g = kernel(xs, x.reshape(np, nf), kernel_params) - jnp.dot(fmat, fmat[s].T)
         g = g.squeeze()
 
         # update the i-th column of the factor matrix
@@ -180,8 +190,15 @@ def rpcholesky_derivs(
     """
 
     # x is (number of points, number of features)
-    n, _ = x.shape
-    _, _, jv = jacobian.shape
+    if kernel.nperms is not None:
+        nperms = kernel.nperms
+        np, nf, jv = jacobian.shape
+        n = int(np / nperms)
+        x = x.reshape(n, nperms, nf)
+        jacobian = jacobian.reshape(n, nperms, nf, jv)
+    else:
+        n, _ = x.shape
+        _, _, jv = jacobian.shape
 
     # factor matrix (F)
     fmat = jnp.zeros((n * jv, n_pivots))
@@ -193,8 +210,9 @@ def rpcholesky_derivs(
     def diagonal_wrapper(init, xj):
         # ensure that each point is (1,)
         x, jacobian = xj
-        x = jnp.expand_dims(x, axis=0)
-        jacobian = jnp.expand_dims(jacobian, axis=0)
+        if kernel.nperms is None:
+            x = jnp.expand_dims(x, axis=0)
+            jacobian = jnp.expand_dims(jacobian, axis=0)
         return init, kernel.d01kj(x, x, kernel_params, jacobian, jacobian)
 
     _, diag = jax.lax.scan(diagonal_wrapper, init=0, xs=(x, jacobian))
@@ -217,11 +235,18 @@ def rpcholesky_derivs(
         #       the compilation within lax.fori_loop
         index1 = (s / jv).astype(int)
         index2 = jnp.mod(s, jv)
-        xs = jnp.expand_dims(x[index1], axis=0)
-        js = jnp.expand_dims(jacobian[index1], axis=0)
-        g = kernel.d01kj(xs, x, kernel_params, js, jacobian)[index2] - jnp.dot(
-            fmat, fmat[s].T
-        )
+        if kernel.nperms is None:
+            xs = jnp.expand_dims(x[index1], axis=0)
+            js = jnp.expand_dims(jacobian[index1], axis=0)
+            g = kernel.d01kj(xs, x, kernel_params, js, jacobian)[index2] - jnp.dot(
+                fmat, fmat[s].T
+            )
+        else:
+            xs = x[index1]
+            js = jacobian[index1]
+            g = kernel.d01kj(
+                xs, x.reshape(np, nf), kernel_params, js, jacobian.reshape(np, nf, jv)
+            )[index2] - jnp.dot(fmat, fmat[s].T)
         # g = g.squeeze()
 
         # update the i-th column of the factor matrix

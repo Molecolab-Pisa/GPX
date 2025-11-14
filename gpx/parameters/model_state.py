@@ -234,7 +234,10 @@ class ModelState:
             # name = "kernel " + k[-1].key
             fields.append([name] + list(get_info(p)))
 
-        fields += [[k] + list(get_info(p)) for k, p in params.items()]
+        for k, p in params.items():
+            if p is None:
+                continue
+            fields.append([k] + list(get_info(p)))
 
         with np.printoptions(edgeitems=0):
             print(tabulate(fields, headers=headers, tablefmt=tablefmt))

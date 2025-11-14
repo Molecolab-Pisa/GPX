@@ -359,7 +359,7 @@ def mse_loss(
     jacobian: ArrayLike,
     y_derivs: ArrayLike,
     coeff: ArrayLike = 1.0,
-    y_derivs2: ArrayLike = None,
+    y_derivs_2: ArrayLike = None,
     jacobian_2: ArrayLike = None,
 ) -> Array:
     """Computes the mean squared loss for the target and its derivative
@@ -472,8 +472,16 @@ def fit_derivs(
         mean_function=zero_mean,  # zero mean
     )
     # also store the contracted jacobian for faster predictions
-    ns, _, nv = jacobian.shape
-    jaccoef = jnp.einsum("sv,sfv->sf", c.reshape(ns, nv), jacobian)
+    if state.kernel.nperms is not None:
+        nperms = state.kernel.nperms
+        nsp, nf, nv = jacobian.shape
+        ns = int(nsp / nperms)
+        jaccoef = jnp.einsum(
+            "sv,spfv->spf", c.reshape(ns, nv), jacobian.reshape(ns, nperms, nf, nv)
+        ).reshape(ns * nperms, nf)
+    else:
+        ns, _, nv = jacobian.shape
+        jaccoef = jnp.einsum("sv,sfv->sf", c.reshape(ns, nv), jacobian)
     state = state.update(
         dict(
             x_train=x,

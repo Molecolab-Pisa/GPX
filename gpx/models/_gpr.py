@@ -36,13 +36,14 @@ KeyArray = Array
 # Functions to compute the kernel matrices needed for GPR
 
 
-@partial(jit, static_argnums=(3, 4))
+@partial(jit, static_argnums=(3, 4, 5))
 def _A_lhs(
     x1: ArrayLike,
     x2: ArrayLike,
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
+    predict: Optional[bool] = False,
 ) -> Array:
     """lhs of A x = b
 
@@ -54,8 +55,8 @@ def _A_lhs(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
-    m, _ = x1.shape
-    C_mm = kernel(x1, x2, kernel_params)
+    C_mm = kernel.k(x1, x2, kernel_params, predict=predict)
+    m, _ = C_mm.shape
 
     if noise:
         C_mm = C_mm + (sigma**2 + 1e-10) * jnp.eye(m)
@@ -63,7 +64,7 @@ def _A_lhs(
     return C_mm
 
 
-@partial(jit, static_argnums=(5, 6))
+@partial(jit, static_argnums=(5, 6, 7))
 def _A_derivs_lhs(
     x1: ArrayLike,
     jacobian1: ArrayLike,
@@ -72,6 +73,7 @@ def _A_derivs_lhs(
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
+    predict: Optional[bool] = False,
 ) -> Array:
     """lhs of A x = b
 
@@ -83,7 +85,12 @@ def _A_derivs_lhs(
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 
-    C_mm = kernel.d01kj(x1, x2, kernel_params, jacobian1, jacobian2)
+    if kernel.nperms is not None:
+        C_mm = kernel.d01kj(
+            x1, x2, kernel_params, jacobian1, jacobian2, predict=predict
+        )
+    else:
+        C_mm = kernel.d01kj(x1, x2, kernel_params, jacobian1, jacobian2)
 
     if noise:
         C_mm = C_mm + (sigma**2 + 1e-10) * jnp.eye(C_mm.shape[0])
@@ -97,6 +104,7 @@ def _Ax_lhs_fun(
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
+    predict: Optional[bool] = False,
 ) -> Callable[ArrayLike, Array]:
     """matrix-vector function for the lhs of A x = b
 
@@ -110,9 +118,19 @@ def _Ax_lhs_fun(
     sigma = params["sigma"].value
 
     def row_fun(x1s):
-        return kernel(x1s, x2, kernel_params)
+        if kernel.nperms is not None:
+            if not predict:
+                x1s = x1s[0]
+        return kernel.k(x2, x1s, kernel_params, predict=predict).T
 
     jitter_noise = sigma**2 + 1e-10
+
+    if kernel.nperms is not None:
+        if not predict:
+            nperms = kernel.nperms
+            nsp1, nf1 = x1.shape
+            ns1 = int(nsp1 / nperms)
+            x1 = x1.reshape(ns1, nperms, nf1)
 
     return rowfun_to_matvec(
         row_fun, init_val=(x1,), update_diag=noise, diag_value=jitter_noise
@@ -127,6 +145,7 @@ def _Ax_derivs_lhs_fun(
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
+    predict: Optional[bool] = False,
 ) -> Callable[ArrayLike, Array]:
     """matrix-vector function for the lhs of A x = b
 
@@ -141,9 +160,21 @@ def _Ax_derivs_lhs_fun(
     sigma = params["sigma"].value
 
     def row_fun(x1s, j1s):
-        return kernel.d01kj(x1s, x2, kernel_params, j1s, jacobian2)
+        if kernel.nperms is not None:
+            if not predict:
+                x1s = x1s[0]
+                j1s = j1s[0]
+        return kernel.d01kj(x2, x1s, kernel_params, jacobian2, j1s, predict=predict).T
 
     jitter_noise = sigma**2 + 1e-10
+
+    if kernel.nperms is not None:
+        if not predict:
+            nperms = kernel.nperms
+            nsp1, nf1, nv1 = jacobian1.shape
+            ns1 = int(nsp1 / nperms)
+            x1 = x1.reshape(ns1, nperms, nf1)
+            jacobian1 = jacobian1.reshape(ns1, nperms, nf1, nv1)
 
     matvec = rowfun_to_matvec(
         row_fun, init_val=(x1, jacobian1), update_diag=noise, diag_value=jitter_noise
@@ -159,6 +190,7 @@ def _Kx_derivs1_fun(
     params: ParameterDict,
     kernel: Kernel,
     noise: Optional[bool] = True,
+    predict: Optional[bool] = False,
 ) -> Callable[ArrayLike, Array]:
     """matrix-vector function for the first derivative of K
 
@@ -170,7 +202,7 @@ def _Kx_derivs1_fun(
 
     def row_fun(x1s):
         x1s = jnp.expand_dims(x1s, axis=0)
-        return kernel.d1kj(x1s, x2, kernel_params, jacobian2)
+        return kernel.d0kj(x2, x1s, kernel_params, jacobian2, predict=predict).T
 
     matvec = rowfun_to_matvec(row_fun, init_val=(x1))
 
@@ -443,7 +475,9 @@ def _predict_dense(
     μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
     C_nn = K_nn - K_nm (K_mm + σ²I)⁻¹ K_mn
     """
-    K_mn = _A_lhs(x1=x_train, x2=x, params=params, kernel=kernel, noise=False)
+    K_mn = _A_lhs(
+        x1=x_train, x2=x, params=params, kernel=kernel, noise=False, predict=True
+    )
     mu = mu + jnp.dot(K_mn.T, c)
 
     if full_covariance:
@@ -474,7 +508,9 @@ def _predict_iter(
 
     μ_n = K_nm (K_mm + σ²)⁻¹(y - μ)
     """
-    matvec = _Ax_lhs_fun(x1=x, x2=x_train, params=params, kernel=kernel, noise=False)
+    matvec = _Ax_lhs_fun(
+        x1=x, x2=x_train, params=params, kernel=kernel, noise=False, predict=True
+    )
     mu = mu + matvec(c)
     return mu
 
@@ -503,12 +539,12 @@ def _predict_derivs_dense(
 
     where K = ∂₁∂₂K
     """
-    ns, _, nd = jacobian.shape
 
     # we have the contracted jacobian, so we try to be faster
     # note that this is incompatible with full_covariance as we
     # do not have the kernel
     if jaccoef is not None:
+        ns, _, nd = jacobian.shape
         mu = mu + jnp.sum(
             kernel.d01kjc(
                 x1=x_train,
@@ -516,6 +552,7 @@ def _predict_derivs_dense(
                 params=params["kernel_params"],
                 jaccoef=jaccoef,
                 jacobian=jacobian,
+                predict=True,
             ),
             axis=0,
         )
@@ -529,8 +566,12 @@ def _predict_derivs_dense(
         params=params,
         kernel=kernel,
         noise=False,
+        predict=True,
     )
     mu = mu + jnp.dot(K_mn.T, c)
+
+    _, _, nd = jacobian.shape
+    ns = int(K_mn.shape[1] / nd)
 
     if full_covariance:
         C_mm = _A_derivs_lhs(
@@ -590,6 +631,7 @@ def _predict_derivs_iter(
         params=params,
         kernel=kernel,
         noise=False,
+        predict=True,
     )
     mu = mu + matvec(c)
     # recover the right shape
@@ -626,14 +668,15 @@ def _predict_y_derivs_dense(
         n = x.shape[0]
         o = c.shape[1]
         mu = mu + jnp.sum(
-            kernel.d0kjc(x1=x_train, x2=x, params=kernel_params, jaccoef=jaccoef),
+            kernel.d0kjc(
+                x1=x_train, x2=x, params=kernel_params, jaccoef=jaccoef, predict=True
+            ),
             axis=0,
         )
         return mu.reshape(n, o)
-
-    K_mn = kernel.d0kj(x_train, x, kernel_params, jacobian_train)
-
-    mu = mu + jnp.dot(K_mn.T, c)
+    else:
+        K_mn = kernel.d0kj(x_train, x, kernel_params, jacobian_train, predict=True)
+        mu = mu + jnp.dot(K_mn.T, c)
 
     if full_covariance:
         C_mm = kernel.d01kj(
@@ -678,6 +721,7 @@ def _predict_y_derivs_iter(
         params=params,
         kernel=kernel,
         noise=False,
+        predict=True,
     )
     mu = mu + matvec(c)
     return mu
