@@ -259,6 +259,8 @@ def randomized_minimization_ol(
     y_derivs: ArrayLike,
     jacobian: ArrayLike,
     loss_fn: Callable,
+    y_derivs_2: ArrayLike = None,
+    jacobian_2: ArrayLike = None,
     minimization_function: Callable = scipy_minimize_derivs,
     num_restarts: Optional[int] = 0,
     return_history: Optional[bool] = False,
@@ -300,11 +302,21 @@ def randomized_minimization_ol(
         x=x,
         y=y,
         y_derivs=y_derivs,
+        y_derivs_2=y_derivs_2,
         jacobian=jacobian,
+        jacobian_2=jacobian_2,
         loss_fn=loss_fn,
         **opt_kwargs,
     )
-    loss = loss_fn(state=state, x=x, y=y, y_derivs=y_derivs, jacobian=jacobian)
+    loss = loss_fn(
+        state=state,
+        x=x,
+        y=y,
+        y_derivs=y_derivs,
+        jacobian=jacobian,
+        y_derivs_2=y_derivs_2,
+        jacobian_2=jacobian_2,
+    )
 
     states.append(state)
     losses.append(loss)
@@ -319,7 +331,9 @@ def randomized_minimization_ol(
             x=x,
             y=y,
             y_derivs=y_derivs,
+            y_derivs_2=y_derivs_2,
             jacobian=jacobian,
+            jacobian_2=jacobian_2,
             loss_fn=loss_fn,
             **opt_kwargs,
         )
@@ -329,6 +343,8 @@ def randomized_minimization_ol(
             y=y,
             y_derivs=y_derivs,
             jacobian=jacobian,
+            y_derivs_2=y_derivs_2,
+            jacobian_2=jacobian_2,
         )
 
         states.append(state)

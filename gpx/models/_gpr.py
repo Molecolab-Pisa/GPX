@@ -185,6 +185,12 @@ def _precond_rpcholesky(
     n_pivots: int,
     key: KeyArray,
 ) -> Callable[ArrayLike, Array]:
+    """preconditioner for Conjugate Gradient
+    Builds the preconditioner to improve the convergence of the
+    conjugate gradient using randomly pivoted cholesky.
+
+        P⁻¹ = σ⁻² - σ⁻²Lk(σ²I + Lk.T Lk)⁻¹ Lk.T
+    """
     kernel_params = params["kernel_params"]
     sigma = params["sigma"].value
 

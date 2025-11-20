@@ -359,6 +359,8 @@ def mse_loss(
     jacobian: ArrayLike,
     y_derivs: ArrayLike,
     coeff: ArrayLike = 1.0,
+    y_derivs_2: ArrayLike = None,
+    jacobian_2: ArrayLike = None,
 ) -> Array:
     """Computes the mean squared loss for the target and its derivative
 
@@ -375,6 +377,8 @@ def mse_loss(
     Returns:
         loss: mean squared loss
     """
+    if jacobian_2 is not None:
+        raise NotImplementedError("MSE with two derivatives is not implemented!")
     return _mse(
         params=state.params,
         x=x,
